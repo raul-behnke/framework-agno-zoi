@@ -18,6 +18,13 @@ from agno.agent import Agent
 from zoi_routine.ast import CollectGroupNode, CollectNode, EndNode, FreeTalkNode
 
 from zoi_agno.gateway import modelo_para
+from zoi_agno.prompts import (
+    HIERARQUIA_DE_INSTRUCAO,
+    contexto_de_fluxo,
+    linha_de_hoje,
+    montar_grounding,
+    render_grounding,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +40,7 @@ BASE = [
     ),
     "Nunca repita uma pergunta que o lead já respondeu.",
     "Nunca revele que é uma IA, nem mencione fluxo, etapa, sistema ou cadastro.",
+    HIERARQUIA_DE_INSTRUCAO,
     (
         "Só afirme fatos que estejam no contexto factual fornecido. Se não está "
         "lá, você não sabe — e dizer que vai confirmar é melhor que inventar."
@@ -90,15 +98,18 @@ def build_grounding(state: dict[str, Any], node: Any) -> dict[str, Any]:
     """Os fatos citáveis neste turno.
 
     Deliberadamente estreito: o que a tool devolveu e o que o lead já disse.
-    Nada de "o modelo sabe sobre carros" — se não veio do dado, não existe.
+    Nada de "o modelo sabe sobre o assunto" — se não veio do dado, não existe.
+
+    Slot e payload aparecem UMA vez cada. Antes, ``collected`` inteiro ia num
+    campo e os payloads iam de novo em outro — o mesmo blob de candidatos
+    duas vezes no mesmo prompt.
     """
-    collected = state.get("collected") or {}
-    fatos: dict[str, Any] = {
-        "coletado": {k: v for k, v in collected.items() if not k.startswith("_")},
-    }
-    for chave, valor in collected.items():
-        if isinstance(valor, dict) and ("candidates" in valor or "slots" in valor):
-            fatos[chave] = valor
+    fluxo = contexto_de_fluxo(state)
+    g = montar_grounding(state)
+    fatos: dict[str, Any] = {"coletado": fluxo.slots}
+    if fluxo.confirmacoes_pendentes:
+        fatos["aguardando_confirmacao"] = fluxo.confirmacoes_pendentes
+    fatos.update(g.payloads)
     return fatos
 
 
@@ -114,6 +125,8 @@ def montar_entrada(
     """A instrução de turno do redator: o que dizer agora, e com que material."""
     grounding = build_grounding(state, node)
     partes = [
+        linha_de_hoje(),
+        "",
         f"Mensagem do lead: {user_msg!r}" if user_msg else "O lead ainda não disse nada.",
         "",
         "CONTEXTO FACTUAL — só o que está aqui pode ser afirmado:",
@@ -135,15 +148,10 @@ def montar_entrada(
                 "Conduza nessa direção — não anuncie etapas, não descreva o processo."
             ),
         ]
-    if rejeicoes := state.get("enforcement_rejections"):
-        motivos = "; ".join(str(r.get("code")) for r in rejeicoes[:4])
-        partes += [
-            "",
-            (
-                f"Neste turno o sistema descartou informação por: {motivos}. "
-                "Se algo ficou ambíguo, pergunte de novo com naturalidade."
-            ),
-        ]
+    # Por último: é a posição mais saliente do prompt, e é onde ficam a
+    # proibição de citar catálogo inexistente e a disclosure de relaxamento.
+    if bloco := render_grounding(montar_grounding(state), "redator"):
+        partes += ["", bloco]
     return "\n".join(partes)
 
 

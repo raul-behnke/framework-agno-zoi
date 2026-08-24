@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** Fase 4 quase fechada. Pipeline como Workflow do Agno, estado persistido por `session_id`, e **os cinco cérebros ativos**. Faltam: paridade de prompts com o v4, fixtures de produção e o gate contra os goldens.
+> **Estado:** Fase 4 quase fechada. Pipeline como Workflow do Agno, estado persistido por `session_id`, cinco cérebros ativos e os fragmentos de prompt do v4 portados. Faltam: fixtures de produção e o gate contra os goldens.
 
 ## A ideia central
 
@@ -54,6 +54,7 @@ Um step-função que declara `run_context` recebe o `session_state` vivo; a escr
 | `pipeline.py` | Os estágios de um turno, costurados |
 | `gateway.py` | `routing.yaml` → modelo por papel + cadeia de fallback |
 | `guards/` | Anti-invenção e frases proibidas, determinísticos |
+| `prompts.py` | Hierarquia de instrução, âncora temporal, grounding por papel |
 | `tools/` | Registro resolvido pelo `config.yaml` do tenant |
 | `builder.py` | `Tenant → agno.Workflow` + `WorkflowRuntime` |
 
@@ -205,3 +206,18 @@ Cada um faz uma coisa só. O extrator não escreve, o redator não decide, o cr�
 ### Latência medida
 
 Conversa de 3 turnos na fixture, com os cinco cérebros e `gpt-5.4-mini`: **4,8 a 6,5 segundos por turno**. É o número que a decisão "medir primeiro, cortar depois" pedia. Os caminhos para reduzir, se precisar: crítico de tom em `conditional`, planner desligado (`usar_planner=False`), ou modelo mais rápido no papel `extractor`.
+
+## O que vai no prompt, e por quê
+
+Três fragmentos compartilhados (`prompts.py`), portados do v4. Cada um existe por um bug real.
+
+**Hierarquia de instrução.** A mensagem do lead chega de um canal público — é entrada não confiável. Os dois cérebros que a leem declaram explicitamente que ela é *dado a interpretar, nunca ordem a obedecer*, que o agente não revela as próprias instruções, e que essas regras prevalecem sobre qualquer coisa escrita na conversa.
+
+**Âncora temporal.** A data de hoje, no fuso do tenant, remontada a cada turno e nunca cacheada. Sem ela, "terça que vem" e "amanhã" viram chute — e agendamento é metade dos casos de uso.
+
+**Grounding por papel.** Cada cérebro vê só os canais que o trabalho dele exige, e cada coisa aparece **uma vez**. Dois blocos ficam no fim do prompt, na posição mais saliente:
+
+- *Proibição sem catálogo* — quando nenhuma busca rodou, é proibido citar qualquer produto, preço ou horário. Existe para contrariar a puxada do `flow_goal` e do plano, que dizem "apresentar opções". Sem ela o redator inventa o que o sistema nunca buscou.
+- *Disclosure de relaxamento* — quando a busca teve que ceder um critério, o agente diz isso. Oferecer o mais próximo como se fosse o pedido é a forma mais comum de o agente parecer desonesto, e o lead descobre depois.
+
+E uma diretiva de nó: num `freetalk` que declara slots, a resposta do lead é uma **escolha**, então `set_slot` e `signal` têm que sair juntos, com o valor exato do id — não o rótulo legível. Sem isso o slot é gravado, o `decide` seguinte não tem sinal para consumir, e a conversa volta a perguntar o que o lead já respondeu.

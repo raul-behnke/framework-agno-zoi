@@ -25,6 +25,7 @@ from zoi_routine.ast import CollectGroupNode, CollectNode, FreeTalkNode
 
 from zoi_agno.contracts import CommandGenOutput
 from zoi_agno.gateway import modelo_para
+from zoi_agno.prompts import HIERARQUIA_DE_INSTRUCAO, contexto_de_fluxo, linha_de_hoje
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ INSTRUCOES = [
         "confidence reflete o quanto o texto do lead sustenta o valor: 1.0 quando "
         "ele disse literalmente; abaixo de 0.7 quando você está interpretando."
     ),
+    HIERARQUIA_DE_INSTRUCAO,
 ]
 
 
@@ -90,7 +92,30 @@ def _contexto_do_no(node: Any, routine: Any) -> str:
                 "Sinais que você PODE emitir (só estes, nome exato): " + ", ".join(node.signals)
             )
         if node.slots:
-            partes.append("Slots capturáveis aqui: " + ", ".join(node.slots))
+            # Nó de ESCOLHA: as opções já foram apresentadas ao lead a partir
+            # do estado, então a resposta dele é um pick — não uma pergunta.
+            #
+            # Bug real do v4, portado com a diretiva: o lead escolhia "8h30", o
+            # extrator ficava em loop pedindo mais contexto, o slot nunca era
+            # setado, o decide seguinte nunca roteava e o agendamento nunca
+            # disparava. O par set_slot + signal tem que sair JUNTO.
+            partes += [
+                f"Este nó CAPTURA: {', '.join(node.slots)}.",
+                "As opções já foram apresentadas ao lead. Quando ele escolher uma:",
+                (
+                    "  - emita set_slot com o valor EXATO da opção como ela aparece "
+                    "no estado (o id, não a paráfrase nem o rótulo legível);"
+                ),
+                (
+                    "  - emita TAMBÉM o signal correspondente — o primeiro declarado "
+                    "para escolha bem-sucedida, ou o apropriado se ele recusar tudo "
+                    "ou desistir."
+                ),
+                (
+                    "Escolha clara do lead resolve o turno: não peça confirmação do "
+                    "que ele acabou de escolher."
+                ),
+            ]
         return "\n".join(partes)
     return f"Nó atual do tipo {type(node).__name__}."
 
@@ -115,8 +140,10 @@ def montar_entrada(user_msg: str, node: Any, routine: Any, collected: dict[str, 
     ``collected`` entra para que ele não re-extraia o que já está preenchido,
     e para que perceba correção ("na verdade é Curitiba, não São Paulo").
     """
-    ja = ", ".join(f"{k}={v!r}" for k, v in collected.items() if not k.startswith("_")) or "nada"
+    fluxo = contexto_de_fluxo({"collected": collected})
+    ja = ", ".join(f"{k}={v!r}" for k, v in fluxo.slots.items()) or "nada"
     return (
+        f"{linha_de_hoje()}\n\n"
         f"{_contexto_do_no(node, routine)}\n\n"
         f"Já coletado nesta conversa: {ja}\n\n"
         f"Mensagem do lead: {user_msg!r}"
