@@ -51,11 +51,15 @@ def build_workflow(tenant: Tenant, *, db: Any, pipeline: Pipeline | None = None)
     """
     p = pipeline or Pipeline(tenant, db=db)
 
-    def ingress(step_input: StepInput, run_context) -> StepOutput:
+    async def ingress(step_input: StepInput, run_context) -> StepOutput:
         estado = run_context.session_state
         _garantir_estado(estado, tenant)
         user_msg = str(step_input.input or "")
         prompt = p.ingress(estado, user_msg)
+        # O planner roda aqui, no mesmo lugar em que ``rodar_turno`` o chama.
+        # Ligá-lo num caminho só faria os dois divergirem — foi o que
+        # aconteceu na primeira versão deste arquivo.
+        await p.planejar(estado, user_msg)
         return StepOutput(content=prompt)
 
     async def processar(step_input: StepInput, run_context) -> StepOutput:
@@ -66,13 +70,13 @@ def build_workflow(tenant: Tenant, *, db: Any, pipeline: Pipeline | None = None)
         estado[_MEIO] = meio
         return StepOutput(content=meio["prompt_redator"])
 
-    def finalizar(step_input: StepInput, run_context) -> StepOutput:
+    async def finalizar(step_input: StepInput, run_context) -> StepOutput:
         estado = run_context.session_state
         meio = estado.pop(_MEIO, None)
         if meio is None:  # pragma: no cover — só se um step for pulado
             logger.error("builder.finalizar_sem_meio session=%s", estado.get("thread_id"))
             return StepOutput(content=str(step_input.previous_step_content or ""))
-        turno = p.finalizar(estado, str(step_input.previous_step_content or ""), meio)
+        turno = await p.finalizar(estado, str(step_input.previous_step_content or ""), meio)
         estado[_TURNO] = {
             "texto": turno.texto,
             "node_id": turno.node_id,

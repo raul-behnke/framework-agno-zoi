@@ -20,7 +20,7 @@ from typing import Any
 
 from zoi_routine.ast import EndNode, RoutineAst, ToolNode
 
-from zoi_agno.brains import composer, extractor
+from zoi_agno.brains import composer, critic, extractor, planner, tone
 from zoi_agno.contracts import Command, CommandGenOutput
 from zoi_agno.enforcement import default_rules
 from zoi_agno.enforcement.dispatcher_v4 import DispatcherV4
@@ -53,12 +53,40 @@ class Pipeline:
     chamada.
     """
 
-    def __init__(self, tenant: Tenant, *, db: Any = None) -> None:
+    def __init__(
+        self,
+        tenant: Tenant,
+        *,
+        db: Any = None,
+        usar_planner: bool = True,
+        config_tom: tone.ConfigTom | None = None,
+        cerebros: dict[str, Any] | None = None,
+    ) -> None:
+        """``cerebros`` substitui agentes por dublês — usado nos testes.
+
+        Chaves aceitas: ``extrator``, ``redator``, ``planejador``, ``critico``,
+        ``critico_tom``. Sem isso um teste de costura acabaria chamando os
+        cérebros de verdade pela porta dos fundos: eles são fail-soft, então a
+        falha de rede não quebraria o teste — só o deixaria lento e dependente
+        de conectividade.
+        """
         self.tenant = tenant
         self.routine: RoutineAst = tenant.routine
         self.db = db
-        self.extrator = extractor.build(tenant.routing, db=None)
-        self.redator = composer.build(tenant.persona, tenant.routing, db=None)
+
+        # Os cinco cérebros. Extrator e redator rodam sempre; os outros três
+        # têm portão próprio, porque cada um custa uma chamada por turno.
+        c = cerebros or {}
+        self.extrator = c.get("extrator") or extractor.build(tenant.routing, db=None)
+        self.redator = c.get("redator") or composer.build(tenant.persona, tenant.routing, db=None)
+        if "planejador" in c:
+            self.planejador = c["planejador"]
+        else:
+            self.planejador = planner.build(tenant.routing) if usar_planner else None
+        self.critico = c.get("critico") or critic.build(tenant.routing)
+        self.critico_tom = c.get("critico_tom") or tone.build(tenant.routing)
+        self.config_tom = config_tom or tone.ConfigTom()
+
         self.rules = default_rules()
         self.dispatcher = DispatcherV4(rules=self.rules)
         self.tools = build_registry(tenant.config)
@@ -105,6 +133,15 @@ class Pipeline:
         node = current_node(self.routine, state)
         return extractor.montar_entrada(user_msg, node, self.routine, state.get("collected", {}))
 
+    async def planejar(self, state: dict[str, Any], user_msg: str) -> None:
+        """Projeta os próximos passos. Falha vira modo reativo, sem drama."""
+        if self.planejador is None or not user_msg:
+            return
+        plano = await planner.planejar(self.planejador, self.routine, state, user_msg)
+        state["plan"] = plano.model_dump() if plano else None
+        if plano is not None:
+            state.setdefault("plan_history", []).append(state["plan"])
+
     async def processar(self, state: dict[str, Any], saida_extrator: Any) -> dict[str, Any]:
         """Fiscaliza, aplica, avança e executa tools. Devolve o prompt do redator.
 
@@ -122,6 +159,7 @@ class Pipeline:
             routine=self.routine,
             state=state,
             say_templates=resultado.say_templates,
+            handoff=handoff,
         )
         return {
             "prompt_redator": prompt,
@@ -131,10 +169,27 @@ class Pipeline:
             "handoff": handoff,
         }
 
-    def finalizar(self, state: dict[str, Any], texto: str, meio: dict[str, Any]) -> Turno:
-        """Aplica os guardas e fecha o turno."""
+    async def finalizar(self, state: dict[str, Any], texto: str, meio: dict[str, Any]) -> Turno:
+        """Críticos, guardas e fechamento."""
         resultado = meio["resultado"]
         aceitos = meio["aceitos"]
+
+        # Crítico de decisão — com portão: só quando há algo irreversível.
+        portao = critic.avaliar_portao([c.model_dump_compat() for c in aceitos], state)
+        if portao.acionado:
+            veredito = await critic.julgar(
+                self.critico, portao.decisao, state, state.get("_last_user_msg", "")
+            )
+            state["_critico"] = {"decisao": portao.decisao, "aprovado": veredito.aprovado}
+            if not veredito.aprovado:
+                logger.info(
+                    "pipeline.critico_vetou decisao=%s motivo=%s", portao.decisao, veredito.motivo
+                )
+                meio["handoff"] = meio["handoff"] and portao.decisao != "handoff_human"
+
+        # Crítico de tom — uma regeneração, e fica o melhor dos dois.
+        texto = await self._refinar_tom(texto, state, meio)
+
         texto = self._guardar(texto, state, resultado.say_templates)
 
         state["outgoing_message"] = texto
@@ -156,10 +211,31 @@ class Pipeline:
     async def rodar_turno(self, state: dict[str, Any], user_msg: str) -> Turno:
         """Um turno inteiro, fora do Workflow. Muta ``state`` in-place."""
         prompt_extrator = self.ingress(state, user_msg)
+        await self.planejar(state, user_msg)
         saida = await self._chamar_extrator(prompt_extrator, user_msg)
         meio = await self.processar(state, saida)
         texto = await self._chamar_redator(meio["prompt_redator"], meio["resultado"].say_templates)
-        return self.finalizar(state, texto, meio)
+        return await self.finalizar(state, texto, meio)
+
+    async def _refinar_tom(self, texto: str, state: dict[str, Any], meio: dict[str, Any]) -> str:
+        """Revisa a voz e, se reprovada, pede UMA regeneração ao redator.
+
+        Fica o melhor dos dois: se a regeneração falhar ou vier vazia, o
+        rascunho original sobrevive. Nunca piora.
+        """
+        if not self.config_tom.deve_rodar():
+            return texto
+        veredito = await tone.revisar(self.critico_tom, texto, self.tenant.persona)
+        if veredito.aprovado or not veredito.retorno:
+            return texto
+        state["_tom_reprovado"] = veredito.retorno
+        prompt = (
+            f"{meio['prompt_redator']}\n\n"
+            f"REESCREVA. Um revisor apontou: {veredito.retorno}\n"
+            "Mesma informação, mesma intenção, só a voz muda."
+        )
+        refeito = await self._chamar_redator(prompt, [])
+        return refeito or texto
 
     async def _chamar_extrator(self, prompt: str, user_msg: str) -> Any:
         """Chama o extrator. Falha vira ``None`` — o turno continua sem extração."""

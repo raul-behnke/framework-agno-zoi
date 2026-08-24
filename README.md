@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** Fase 4 em curso. O pipeline roda **como Workflow do Agno**, com estado persistido por `session_id`, e conversa de ponta a ponta com LLM real. Faltam: os três cérebros de paridade (planner, crítico, tom), paridade de prompts com o v4, e o gate contra os goldens.
+> **Estado:** Fase 4 quase fechada. Pipeline como Workflow do Agno, estado persistido por `session_id`, e **os cinco cérebros ativos**. Faltam: paridade de prompts com o v4, fixtures de produção e o gate contra os goldens.
 
 ## A ideia central
 
@@ -18,17 +18,11 @@ O LLM nunca decide "agora vou pular pra qualificação". Ele diz "o lead escolhe
 
 ```
 Workflow(session_state=slots, db=PostgresDb(...))
-  ├─ Step  "ingress"    função — redige PII, carrega fatos
-  ├─ Step  "planner"    Agent  🤖
-  ├─ Step  "extract"    Agent  🤖  output_schema=CommandGenOutput
-  ├─ Step  "enforce"    função — ~20 rules: soft / hard / never / transform
-  ├─ Step  "apply"      função — comandos aceitos viram estado
-  ├─ Router "advance"   função — O EXECUTOR: 8 tipos de nó, zero LLM
-  ├─ Step  "compose"    Agent  🤖  persona + grounding
-  ├─ Step  "critic"     Agent  🤖  com portão (decisão irreversível)
-  ├─ Step  "tone"       Agent  🤖  registro de WhatsApp
-  ├─ Step  "guards"     função — anti-invenção, frases proibidas
-  └─ Step  "finalize"   função — custo, transcript, memória
+  ├─ Step  "ingress"     função — abre o turno + planner 🤖
+  ├─ Step  "extract"     Agent  🤖 output_schema=CommandGenOutput
+  ├─ Step  "processar"   função — 20 rules, aplica, executor, tools
+  ├─ Step  "compose"     Agent  🤖 persona + grounding
+  └─ Step  "finalizar"   função — crítico 🤖, tom 🤖, guardas, fechamento
 ```
 
 **Regra de fronteira:** todo Step `executor=` é função pura sobre `session_state` e nunca chama LLM. Todo LLM está num Step `agent=`. Isso torna o pipeline testável sem rede.
@@ -56,7 +50,7 @@ Um step-função que declara `run_context` recebe o `session_state` vivo; a escr
 | `tenants.py` | Carrega os artefatos YAML de um tenant |
 | `enforcement/` | As 20 rules, na ordem, + o barramento soft/hard/never/transform |
 | `executor/` | O `advance()` — move o cursor pelos 8 tipos de nó, sem LLM |
-| `brains/` | Extrator e redator. Planner, crítico e tom: pendentes |
+| `brains/` | Os cinco cérebros: planner, extrator, redator, crítico, tom |
 | `pipeline.py` | Os estágios de um turno, costurados |
 | `gateway.py` | `routing.yaml` → modelo por papel + cadeia de fallback |
 | `guards/` | Anti-invenção e frases proibidas, determinísticos |
@@ -191,3 +185,23 @@ Cinco Steps: `ingress` → **extract** 🤖 → `processar` → **compose** 🤖
 **Por que cinco steps e não um por nó do roteiro.** O grafo da conversa é interpretado em runtime pelo executor; a topologia do Workflow é a do *turno*, que é sempre a mesma. Um Step por nó exigiria recompilar o Workflow a cada routine publicada, e ainda assim não expressaria o roteamento — que depende de estado, não de posição. Um `Router` aqui seria decoração: escolheria sempre o mesmo caminho.
 
 O `session_id` é a thread da conversa. O estado vem do `db` e volta para ele a cada turno — é o que substitui o checkpointer do LangGraph.
+
+## Os cinco cérebros
+
+| Cérebro | Quando roda | Papel do `routing.yaml` |
+|---|---|---|
+| **planner** | todo turno com fala do lead | `agent` |
+| **extrator** | todo turno com fala do lead | `extractor` (barato) |
+| **redator** | todo turno | `agent` |
+| **crítico de decisão** | **com portão** — só em `handoff_human`, `finish_flow` ou apresentação de catálogo | `judge` |
+| **crítico de tom** | modo `always` / `conditional` / `off` | `extractor` |
+
+Cada um faz uma coisa só. O extrator não escreve, o redator não decide, o crítico não reescreve.
+
+**Todos os três opcionais são fail-soft.** Erro, timeout ou saída malformada viram aprovação ou modo reativo. Um veto perdido custa um handoff indevido; um turno travado custa o lead.
+
+**O portão do crítico de decisão é uma função pura** (`critic.avaliar_portao`) — dá para testar sem modelo, e é ele que determina o custo na conta do mês.
+
+### Latência medida
+
+Conversa de 3 turnos na fixture, com os cinco cérebros e `gpt-5.4-mini`: **4,8 a 6,5 segundos por turno**. É o número que a decisão "medir primeiro, cortar depois" pedia. Os caminhos para reduzir, se precisar: crítico de tom em `conditional`, planner desligado (`usar_planner=False`), ou modelo mais rápido no papel `extractor`.

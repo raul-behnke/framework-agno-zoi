@@ -109,6 +109,7 @@ def montar_entrada(
     routine: Any,
     state: dict[str, Any],
     say_templates: list[str] | None = None,
+    handoff: bool = False,
 ) -> str:
     """A instrução de turno do redator: o que dizer agora, e com que material."""
     grounding = build_grounding(state, node)
@@ -118,13 +119,21 @@ def montar_entrada(
         "CONTEXTO FACTUAL — só o que está aqui pode ser afirmado:",
         json.dumps(grounding, ensure_ascii=False, indent=2, default=str),
         "",
-        _tarefa(node, routine, state),
+        _tarefa_handoff(state) if handoff else _tarefa(node, routine, state),
     ]
     if say_templates:
         partes += [
             "",
             "Mensagem já definida pelo roteiro (use como base, ajuste o tom):",
             *say_templates,
+        ]
+    if passos := _proximos_passos(state):
+        partes += [
+            "",
+            (
+                f"PARA ONDE A CONVERSA VAI: {passos}. "
+                "Conduza nessa direção — não anuncie etapas, não descreva o processo."
+            ),
         ]
     if rejeicoes := state.get("enforcement_rejections"):
         motivos = "; ".join(str(r.get("code")) for r in rejeicoes[:4])
@@ -136,6 +145,33 @@ def montar_entrada(
             ),
         ]
     return "\n".join(partes)
+
+
+def _proximos_passos(state: dict[str, Any], limite: int = 3) -> str:
+    """O plano em uma linha, para o redator conduzir em vez de marchar.
+
+    Só o "porquê" de cada passo — id de nó não diz nada ao redator e ainda
+    convida o modelo a mencionar o mecanismo para o lead.
+    """
+    passos = (state.get("plan") or {}).get("passos") or []
+    motivos = [str(p.get("porque") or "").strip() for p in passos[:limite]]
+    return "; ".join(m for m in motivos if m)
+
+
+def _tarefa_handoff(state: dict[str, Any]) -> str:
+    """Quando o turno decidiu encaminhar, o texto tem que dizer isso.
+
+    Sem esta porta o redator segue o roteiro normalmente e oferece opções,
+    enquanto o canal já marcou a conversa como escalada — o lead lê uma coisa
+    e o sistema faz outra.
+    """
+    motivo = state.get("_handoff_reason") or "o lead pediu"
+    return (
+        "TAREFA: este turno ESCALA a conversa para uma pessoa "
+        f"(motivo: {motivo}). Confirme que vai encaminhar, de forma breve e "
+        "cordial. NÃO ofereça opções, NÃO faça pergunta de avanço, NÃO tente "
+        "resolver por conta própria."
+    )
 
 
 def _tarefa(node: Any, routine: Any, state: dict[str, Any]) -> str:

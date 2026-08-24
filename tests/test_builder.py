@@ -20,10 +20,9 @@ from agno.run.agent import RunOutput
 
 from zoi_agno.builder import WorkflowRuntime, build_workflow
 from zoi_agno.contracts import CommandGenOutput
-from zoi_agno.pipeline import Pipeline
 from zoi_agno.tenants import load_tenant
 
-from .conftest import FIXTURES_TENANTS
+from .conftest import FIXTURES_TENANTS, pipeline_dublado
 
 
 class AgenteFalso(Agent):
@@ -62,7 +61,7 @@ def _slot(nome: str, valor: Any) -> dict[str, Any]:
 @pytest.fixture
 def runtime(tmp_path):
     t = load_tenant("t_demo", base_dir=FIXTURES_TENANTS)
-    p = Pipeline(t)
+    p = pipeline_dublado(t)
     p.extrator = AgenteFalso(
         [
             _lote(_slot("nome", "Ana"), _slot("servico", "corte")),
@@ -85,7 +84,9 @@ def runtime(tmp_path):
 
 def test_o_workflow_tem_os_cinco_estagios(tmp_path) -> None:
     t = load_tenant("t_demo", base_dir=FIXTURES_TENANTS)
-    wf = build_workflow(t, db=SqliteDb(db_file=str(tmp_path / "x.db")))
+    wf = build_workflow(
+        t, db=SqliteDb(db_file=str(tmp_path / "x.db")), pipeline=pipeline_dublado(t)
+    )
     assert [s.name for s in wf.steps] == [
         "ingress",
         "extract",
@@ -98,7 +99,9 @@ def test_o_workflow_tem_os_cinco_estagios(tmp_path) -> None:
 def test_llm_so_nos_steps_de_agente(tmp_path) -> None:
     """A fronteira: step-função nunca chama modelo; step-agente sempre chama."""
     t = load_tenant("t_demo", base_dir=FIXTURES_TENANTS)
-    wf = build_workflow(t, db=SqliteDb(db_file=str(tmp_path / "x.db")))
+    wf = build_workflow(
+        t, db=SqliteDb(db_file=str(tmp_path / "x.db")), pipeline=pipeline_dublado(t)
+    )
     por_nome = {s.name: s for s in wf.steps}
     for nome in ("ingress", "processar", "finalizar"):
         assert por_nome[nome].active_executor is not None
@@ -109,7 +112,9 @@ def test_llm_so_nos_steps_de_agente(tmp_path) -> None:
 
 def test_o_workflow_leva_o_nome_da_routine(tmp_path) -> None:
     t = load_tenant("t_demo", base_dir=FIXTURES_TENANTS)
-    wf = build_workflow(t, db=SqliteDb(db_file=str(tmp_path / "x.db")))
+    wf = build_workflow(
+        t, db=SqliteDb(db_file=str(tmp_path / "x.db")), pipeline=pipeline_dublado(t)
+    )
     assert wf.name == "demo_barbearia"
 
 
@@ -151,7 +156,7 @@ async def test_a_conversa_chega_ao_fim_pelo_workflow(runtime) -> None:
 async def test_sessoes_diferentes_nao_se_misturam(tmp_path) -> None:
     """``session_id`` é a thread da conversa: um lead não vê o estado de outro."""
     t = load_tenant("t_demo", base_dir=FIXTURES_TENANTS)
-    p = Pipeline(t)
+    p = pipeline_dublado(t)
     p.extrator = AgenteFalso([_lote(_slot("nome", "Ana")), _lote(_slot("nome", "Bruno"))])
     p.redator = AgenteFalso(["oi", "oi"])
     rt = WorkflowRuntime(t, db=SqliteDb(db_file=str(tmp_path / "wf.db")), pipeline=p)
@@ -167,7 +172,7 @@ async def test_sessoes_diferentes_nao_se_misturam(tmp_path) -> None:
 async def test_a_fiscalizacao_roda_dentro_do_workflow(tmp_path) -> None:
     """Os Steps não são um caminho paralelo que escapa das rules."""
     t = load_tenant("t_demo", base_dir=FIXTURES_TENANTS)
-    p = Pipeline(t)
+    p = pipeline_dublado(t)
     p.extrator = AgenteFalso([_lote(_slot("cpf_do_avo", "123"))])
     p.redator = AgenteFalso(["ok"])
     rt = WorkflowRuntime(t, db=SqliteDb(db_file=str(tmp_path / "wf.db")), pipeline=p)
@@ -184,3 +189,50 @@ async def test_a_chave_de_transporte_nao_vaza_para_o_estado(runtime) -> None:
     await rt.turno("s1", "sou a Ana, quero corte")
     st = rt.estado("s1")
     assert "_meio_do_turno" not in st
+
+
+async def test_o_workflow_e_o_rodar_turno_chamam_os_mesmos_cerebros(tmp_path) -> None:
+    """Os dois caminhos não podem divergir.
+
+    Regressão real: o planner foi ligado em ``rodar_turno`` e esquecido nos
+    steps do Workflow. Nada quebrou — o plano simplesmente nunca era gerado no
+    caminho que a produção usa, e o sintoma era um campo vazio no estado.
+    """
+    t = load_tenant("t_demo", base_dir=FIXTURES_TENANTS)
+
+    class PlanejadorContador(AgenteFalso):
+        chamado = 0
+
+        async def arun(self, input: str = "", **_: Any) -> RunOutput:
+            type(self).chamado += 1
+            return RunOutput(content=None)
+
+    def monta():
+        p = pipeline_dublado(
+            t,
+            extrator=AgenteFalso([_lote(_slot("nome", "Ana"))]),
+            redator=AgenteFalso(["ok"]),
+        )
+        p.planejador = PlanejadorContador([], "planner")
+        return p
+
+    # caminho A: rodar_turno
+    PlanejadorContador.chamado = 0
+    pa = monta()
+    from zoi_agno.state import new_session_state
+
+    st = new_session_state(
+        thread_id="a", tenant_id="t_demo", contact_id="1", start_node=t.start_node
+    )
+    await pa.rodar_turno(st, "sou a Ana")
+    via_classe = PlanejadorContador.chamado
+
+    # caminho B: Workflow
+    PlanejadorContador.chamado = 0
+    rt = WorkflowRuntime(t, db=SqliteDb(db_file=str(tmp_path / "wf.db")), pipeline=monta())
+    await rt.turno("b", "sou a Ana")
+    via_workflow = PlanejadorContador.chamado
+
+    assert via_classe == via_workflow == 1, (
+        f"planner chamado {via_classe}x pela classe e {via_workflow}x pelo Workflow"
+    )

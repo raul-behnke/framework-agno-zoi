@@ -47,3 +47,36 @@ def cmd(kind: str, payload: dict[str, Any], **over: Any) -> Command:
 
 
 FIXTURES_TENANTS = __import__("pathlib").Path(__file__).parent / "fixtures" / "tenants"
+
+
+def pipeline_dublado(tenant, *, extrator=None, redator=None, **kw):
+    """Um ``Pipeline`` com os cinco cérebros neutralizados.
+
+    Os testes de costura injetam só extrator e redator; planner e críticos
+    ficam desligados para que nenhum teste toque a rede pela porta dos fundos.
+    """
+    from zoi_agno.brains import tone
+    from zoi_agno.pipeline import Pipeline
+
+    return Pipeline(
+        tenant,
+        usar_planner=False,
+        config_tom=tone.ConfigTom(modo="off"),
+        cerebros={
+            "extrator": extrator,
+            "redator": redator,
+            "planejador": None,
+            "critico": _CriticoMudo(),
+            "critico_tom": _CriticoMudo(),
+        },
+        **kw,
+    )
+
+
+class _CriticoMudo:
+    """Aprova sempre, sem rede."""
+
+    name = "critico_mudo"
+
+    async def arun(self, *_a, **_k):
+        raise AssertionError("crítico não deveria ser chamado neste teste")

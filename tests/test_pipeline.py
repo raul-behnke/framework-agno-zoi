@@ -16,11 +16,10 @@ from typing import Any
 import pytest
 
 from zoi_agno.contracts import CommandGenOutput
-from zoi_agno.pipeline import Pipeline
 from zoi_agno.state import new_session_state
 from zoi_agno.tenants import load_tenant
 
-from .conftest import FIXTURES_TENANTS
+from .conftest import FIXTURES_TENANTS, pipeline_dublado
 
 
 class _Saida:
@@ -59,7 +58,7 @@ class CerebroQueQuebra:
 @pytest.fixture
 def pipe():
     t = load_tenant("t_demo", base_dir=FIXTURES_TENANTS)
-    p = Pipeline(t)
+    p = pipeline_dublado(t)
     st = new_session_state(
         thread_id="tg:1", tenant_id=t.tenant_id, contact_id="1", start_node=t.start_node
     )
