@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** Fase 3 de 10. Esqueleto, contrato com o Agno, fiscalização (20 rules na ordem) e **executor determinístico**. Os três tenants de produção são percorridos do início ao fim sem LLM. Os cérebros ainda não existem.
+> **Estado:** Fase 4 em curso. O pipeline de turno **funciona ponta a ponta com LLM real** — coleta, tool, sinal, roteamento e despedida. Faltam: expressar o pipeline como steps do Workflow do Agno, os três cérebros de paridade (planner, crítico, tom) e o gate contra os goldens.
 
 ## A ideia central
 
@@ -56,8 +56,12 @@ Um step-função que declara `run_context` recebe o `session_state` vivo; a escr
 | `tenants.py` | Carrega os artefatos YAML de um tenant |
 | `enforcement/` | As 20 rules, na ordem, + o barramento soft/hard/never/transform |
 | `executor/` | O `advance()` — move o cursor pelos 8 tipos de nó, sem LLM |
-| `brains/` | *(Fase 4)* planner, extrator, redator, crítico, tom |
-| `builder.py` | *(Fase 4)* `RoutineAst → agno.Workflow` |
+| `brains/` | Extrator e redator. Planner, crítico e tom: pendentes |
+| `pipeline.py` | Os estágios de um turno, costurados |
+| `gateway.py` | `routing.yaml` → modelo por papel + cadeia de fallback |
+| `guards/` | Anti-invenção e frases proibidas, determinísticos |
+| `tools/` | Registro resolvido pelo `config.yaml` do tenant |
+| `builder.py` | *(pendente)* `RoutineAst → agno.Workflow` |
 
 **Regra dura:** nada em `zoi_agno/` conhece o nome de um tenant. Vertical nova é pasta nova em `tenants/`, zero linha de Python.
 
@@ -132,3 +136,40 @@ ZOI_REAL_TENANTS_DIR=/caminho/tenants uv run pytest
 ```
 
 Os três tenants de produção (`imob_sdr`, `sal_imports`, `zoi_sdr` — 14 a 47 nós, até 8 sub-rotinas e 9 desfechos) são percorridos do nó inicial até um `end` declarado, por seis estratégias diferentes, de forma determinística e sem rede.
+
+## Uma conversa real
+
+Três turnos na fixture da barbearia, com `gpt-5.4-mini` nos dois cérebros:
+
+```
+LEAD  > oi, tudo bem?
+AGENTE> Oi! Tudo bem sim, e você?
+        Me fala seu nome e se você quer corte, barba ou os dois.
+        [nó=c_abertura slots={}]
+
+LEAD  > sou o Rafael, queria fazer a barba
+AGENTE> Perfeito, Rafael.
+        Tenho terça às 09:00, 11:00 ou 14:00. Também tenho quarta às 09:00.
+        Qual você prefere?
+        [nó=ft_escolhe slots={nome: Rafael, servico: barba}]
+
+LEAD  > pode ser terça às 11
+AGENTE> Fechado! Te espero no horário. 👊
+        [nó=e_agendado fim=True]
+```
+
+O que esse diálogo demonstra, em ordem:
+
+- **multi-extração** — `nome` e `servico` saíram de uma frase só, não de dois turnos
+- **tool executada** — os horários vieram do payload da agenda; nenhum foi inventado
+- **sinal move o fluxo** — "pode ser terça às 11" virou o sinal `escolheu`, e o `decide` roteou para `e_agendado`
+- **despedida autorada** — o `farewell` do roteiro saiu como escrito, sem o LLM reescrever
+
+## Testes
+
+```bash
+uv run pytest                      # 162 testes, sem rede
+OPENAI_API_KEY=... uv run pytest   # +3 conversas com LLM real
+```
+
+Os testes com modelo real não afirmam texto literal — o modelo varia. Afirmam propriedades: o que o lead disse virou estado, o que o agente ofereceu veio de um payload, o pedido de humano foi respeitado.
