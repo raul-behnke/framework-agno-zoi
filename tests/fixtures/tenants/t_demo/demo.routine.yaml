@@ -1,0 +1,83 @@
+# Tenant de teste — fluxo curto, só o suficiente para exercitar o carregamento
+# e, mais adiante, o executor determinístico.
+
+routine_name: demo_barbearia
+version: 1
+
+flow_goal: |
+  Agendar um corte: descobrir o serviço, o profissional e o horário, e
+  confirmar. Lead que pede pessoa vai direto ao handoff.
+
+slots:
+  nome:      { type: string, required: true, description: "Nome do cliente." }
+  servico:   { type: enum, values: [corte, barba, combo], required: true, description: "Serviço desejado." }
+  horario:   { type: string, description: "Horário escolhido." }
+  agenda:    { type: string, description: "Payload de horários livres (JSON)." }
+
+main:
+  start: c_abertura
+  nodes:
+
+    c_abertura:
+      type: collect_group
+      name: "Abertura"
+      group_name: abertura
+      exit_policy: all
+      max_turns: 3
+      on_max_turns: t_agenda
+      fields:
+        - { name: nome,    cluster: contexto,       required: true, question: "opa! como é seu nome?" }
+        - { name: servico, cluster: identificacao,  required: true, question: "é corte, barba ou os dois?" }
+      next: t_agenda
+
+    t_agenda:
+      type: tool
+      name: "Buscar horários"
+      kind: python
+      ref: agenda_livre
+      args:
+        servico: "{{ lead.servico }}"
+      output_to: agenda
+      next: ft_escolhe
+
+    ft_escolhe:
+      type: freetalk
+      name: "Escolher horário"
+      goal: |
+        Ofereça os horários livres que vieram em `state.collected.agenda`.
+        Nunca ofereça horário que não esteja no payload. Ao lead escolher,
+        registre em `horario` e emita o sinal `escolheu`.
+      scope: "Oferecer horários livres e capturar a escolha."
+      signals: [escolheu, quer_humano, desistiu]
+      slots: [horario]
+      max_turns: 4
+      exit_on_timeout: e_nutricao
+      next: d_escolha
+
+    d_escolha:
+      type: decide
+      name: "Escolheu?"
+      branches:
+        - { on_signal: escolheu,    next: e_agendado }
+        - { on_signal: quer_humano, next: e_handoff }
+        - { on_signal: desistiu,    next: e_nutricao }
+      else: e_nutricao
+
+    e_agendado:
+      type: end
+      name: "Agendado"
+      outcome: completed
+      role: success
+      farewell: "Fechado! Te espero no horário. 👊"
+    e_handoff:
+      type: end
+      name: "Handoff"
+      outcome: handed_off
+      role: handoff
+      farewell: "Beleza, já te passo pra alguém do salão."
+    e_nutricao:
+      type: end
+      name: "Nutrição"
+      outcome: handed_off
+      role: nurture
+      farewell: "Tranquilo! Quando quiser é só chamar."

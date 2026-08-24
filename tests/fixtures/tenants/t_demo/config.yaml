@@ -1,0 +1,5 @@
+tools:
+  agenda_livre:
+    kind: python
+    module: zoi_agno.tools.agenda_stub
+    name: agenda_livre

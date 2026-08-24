@@ -1,0 +1,9 @@
+routine_name: demo_barbearia
+business:
+  company: "Barbearia de teste — fixture, não é um negócio real."
+  scope: |
+    Agenda corte e barba. Não cobra, não cancela, não remarca — isso é do
+    balcão.
+  business_rules: |
+    - Nunca ofereça horário que não veio da agenda.
+    - Lead que pede uma pessoa específica vai pro handoff.
