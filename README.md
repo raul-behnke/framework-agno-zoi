@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** Fase 1 de 10. O esqueleto está de pé e o contrato com o Agno está validado por teste. O pipeline de turno ainda não existe.
+> **Estado:** Fase 2 de 10. Esqueleto de pé, contrato com o Agno validado por teste, e a fiscalização portada com as 20 rules na ordem. O executor e os cérebros ainda não existem.
 
 ## A ideia central
 
@@ -39,8 +39,8 @@ A premissa que sustenta o executor determinístico, descoberta por experimento e
 
 ```python
 def meu_step(step_input: StepInput, run_context) -> StepOutput:
-    estado = run_context.session_state   # o dicionário VIVO
-    estado["current_node"] = "d_proximo" # mutação in-place propaga
+    estado = run_context.session_state  # o dicionário VIVO
+    estado["current_node"] = "d_proximo"  # mutação in-place propaga
 ```
 
 Um step-função que declara `run_context` recebe o `session_state` vivo; a escrita é vista pelos steps seguintes e persistida no `db` por `session_id`. Isso substitui o checkpointer do LangGraph.
@@ -54,12 +54,35 @@ Um step-função que declara `run_context` recebe o `session_state` vivo; a escr
 | `contracts.py` | Os 15 comandos (união discriminada por `kind`) |
 | `state.py` | O `session_state` de uma conversa |
 | `tenants.py` | Carrega os artefatos YAML de um tenant |
-| `enforcement/` | *(Fase 2)* as ~20 rules, na ordem |
+| `enforcement/` | As 20 rules, na ordem, + o barramento soft/hard/never/transform |
 | `executor/` | *(Fase 3)* o `advance()` — 8 tipos de nó |
 | `brains/` | *(Fase 4)* planner, extrator, redator, crítico, tom |
 | `builder.py` | *(Fase 4)* `RoutineAst → agno.Workflow` |
 
 **Regra dura:** nada em `zoi_agno/` conhece o nome de um tenant. Vertical nova é pasta nova em `tenants/`, zero linha de Python.
+
+## A fiscalização
+
+Todo comando emitido pelo LLM passa por uma fila de 20 rules, **nesta ordem**. Cada uma pode deixar passar, descartar (*soft*), abortar o lote (*hard*), reclamar mas aceitar (*never* — só `handoff_human` e `finish_flow`), ou **reescrever** o comando.
+
+Um exemplo de cada categoria e o bug que ela previne:
+
+| Rule | Bug real que ela mata |
+|---|---|
+| `slot_scope` | IA anota "urgência" enquanto ainda pergunta o nome |
+| `branch_gating_slot` | IA marca `tem_modelo=sim` na abertura e desvia o fluxo inteiro |
+| `interrogative_user_msg` | Lead pergunta "tem outro?" e vira um `sim` extraído |
+| `slot_validator` | `forma_pagamento = "pinguim"` |
+| `appointment_slot_scope` | Agenda um horário que não está na agenda |
+| `signal_normalize` | `pedi_corretor` nunca casa com `pediu_corretor`, e o turno entra em loop |
+| `signal_guard` | `recusou` disparado por qualquer frase que contenha "não" |
+| `confidence` | Dado incerto vira verdade em vez de virar confirmação |
+| `finish_flow_graph` | IA encerra a conversa logo após a última coleta |
+| `album_scope` | Promete foto de um item que não existe, ou que não tem foto |
+
+**A ordem é semântica, não estilo.** `interrogative_user_msg` roda antes de `slot_validator` porque, invertido, o `sim` alucinado passa pela checagem de forma. `tests/test_enforcement_order.py` congela a sequência.
+
+**O escape universal:** `handoff_human` sobrevive a um `hard break` no meio do lote. Se o lead pediu um humano, nenhuma falha anterior engole o pedido.
 
 ## Um tenant
 

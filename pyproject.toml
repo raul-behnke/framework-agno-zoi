@@ -36,6 +36,19 @@ packages = ["src/zoi_agno"]
 line-length = 100
 target-version = "py312"
 
+# Módulos portados verbatim do runtime v4. Cada comentário neles documenta um
+# bug de produção; reescrevê-los por estilo arrisca perder a cicatriz sem que
+# nenhum teste acuse. Só avisos cosméticos são silenciados — bug de verdade
+# (F, E) continua valendo.
+#
+# Precedente: um `ruff --fix` aqui já apagou as aspas de dentro de um
+# `Literal[...]` porque o import estava faltando, transformando o tipo em
+# nomes indefinidos. Rode `--fix` nestes arquivos com atenção.
+[tool.ruff.lint.per-file-ignores]
+"src/zoi_agno/sim_nao_normalizer.py" = ["PIE810"]
+"src/zoi_agno/enforcement/interrogative_user.py" = ["PIE810"]
+"src/zoi_agno/enforcement/slot_validator.py" = ["ISC004"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
