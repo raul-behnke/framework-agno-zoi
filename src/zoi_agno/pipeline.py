@@ -88,39 +88,57 @@ class Pipeline:
         }
 
     # -- os estágios ----------------------------------------------------
+    #
+    # Três blocos determinísticos, com os cérebros entre eles. Esta divisão
+    # existe para que ``rodar_turno`` (usado por canal e teste) e os steps do
+    # Workflow do Agno (``builder.py``) executem exatamente o MESMO código —
+    # duas implementações do pipeline divergiriam em semanas.
+    #
+    #   ingress ──▶ 🤖 extrator ──▶ processar ──▶ 🤖 redator ──▶ finalizar
 
-    async def rodar_turno(self, state: dict[str, Any], user_msg: str) -> Turno:
-        """Um turno inteiro. Muta ``state`` in-place."""
-        # 1. ingress
+    def ingress(self, state: dict[str, Any], user_msg: str) -> str:
+        """Abre o turno. Devolve o prompt do extrator."""
         reset_turn(state)
         state["_last_user_msg"] = user_msg
         if user_msg:
             state.setdefault("messages_tail", []).append({"role": "user", "content": user_msg})
-
         node = current_node(self.routine, state)
+        return extractor.montar_entrada(user_msg, node, self.routine, state.get("collected", {}))
 
-        # 2. extract 🤖
-        comandos = await self._extrair(state, user_msg, node)
+    async def processar(self, state: dict[str, Any], saida_extrator: Any) -> dict[str, Any]:
+        """Fiscaliza, aplica, avança e executa tools. Devolve o prompt do redator.
 
-        # 3. enforce
+        Nada aqui chama LLM: é a metade determinística do turno, e a que os
+        testes cobrem sem rede.
+        """
+        comandos = _comandos_de(saida_extrator, state)
         aceitos, rejeicoes = await self.dispatcher.dispatch(comandos, state, self._ctx(state))
-
-        # 4. apply
         handoff = self._aplicar(state, aceitos)
-
-        # 5. advance (+ tools, que o executor marca mas não chama)
         resultado = self._avancar_executando_tools(state)
-
-        # 6. compose 🤖
         node = current_node(self.routine, state)
-        texto = await self._redigir(state, user_msg, node, resultado.say_templates)
+        prompt = composer.montar_entrada(
+            user_msg=state.get("_last_user_msg", ""),
+            node=node,
+            routine=self.routine,
+            state=state,
+            say_templates=resultado.say_templates,
+        )
+        return {
+            "prompt_redator": prompt,
+            "resultado": resultado,
+            "aceitos": aceitos,
+            "rejeicoes": rejeicoes,
+            "handoff": handoff,
+        }
 
-        # 7. guards
+    def finalizar(self, state: dict[str, Any], texto: str, meio: dict[str, Any]) -> Turno:
+        """Aplica os guardas e fecha o turno."""
+        resultado = meio["resultado"]
+        aceitos = meio["aceitos"]
         texto = self._guardar(texto, state, resultado.say_templates)
 
-        # 8. finalize
         state["outgoing_message"] = texto
-        state["messages_tail"].append({"role": "assistant", "content": texto})
+        state.setdefault("messages_tail", []).append({"role": "assistant", "content": texto})
         state["command_log"] = (state.get("command_log") or []) + [
             c.model_dump_compat() for c in aceitos
         ]
@@ -130,28 +148,38 @@ class Pipeline:
             texto=texto,
             node_id=resultado.node_id,
             finished=resultado.finished,
-            handoff=handoff,
+            handoff=meio["handoff"],
             comandos_aceitos=[c.model_dump_compat() for c in aceitos],
-            rejeicoes=[r.__dict__ for r in rejeicoes],
+            rejeicoes=[r.__dict__ for r in meio["rejeicoes"]],
         )
 
-    async def _extrair(self, state: dict[str, Any], user_msg: str, node: Any) -> list[Command]:
-        """Chama o extrator. Falha vira lote vazio — o turno continua."""
+    async def rodar_turno(self, state: dict[str, Any], user_msg: str) -> Turno:
+        """Um turno inteiro, fora do Workflow. Muta ``state`` in-place."""
+        prompt_extrator = self.ingress(state, user_msg)
+        saida = await self._chamar_extrator(prompt_extrator, user_msg)
+        meio = await self.processar(state, saida)
+        texto = await self._chamar_redator(meio["prompt_redator"], meio["resultado"].say_templates)
+        return self.finalizar(state, texto, meio)
+
+    async def _chamar_extrator(self, prompt: str, user_msg: str) -> Any:
+        """Chama o extrator. Falha vira ``None`` — o turno continua sem extração."""
         if not user_msg:
-            return []
-        entrada = extractor.montar_entrada(user_msg, node, self.routine, state.get("collected", {}))
+            return None
         try:
-            saida = await self.extrator.arun(entrada)
+            saida = await self.extrator.arun(prompt)
         except Exception as exc:  # noqa: BLE001 — o turno não morre por isso
             logger.warning("pipeline.extrator_falhou err=%r", exc)
-            return []
-        conteudo = saida.content
-        if isinstance(conteudo, CommandGenOutput):
-            if conteudo.state_summary:
-                state["state_summary"] = conteudo.state_summary
-            return list(conteudo.commands)
-        logger.warning("pipeline.extrator_sem_schema tipo=%s", type(conteudo).__name__)
-        return []
+            return None
+        return saida.content
+
+    async def _chamar_redator(self, prompt: str, templates: list[str]) -> str:
+        """Chama o redator. Falha cai no template do roteiro, se houver."""
+        try:
+            saida = await self.redator.arun(prompt)
+            return str(saida.content or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("pipeline.redator_falhou err=%r", exc)
+            return templates[0] if templates else ""
 
     def _aplicar(self, state: dict[str, Any], aceitos: list[Command]) -> bool:
         """Comandos aceitos viram estado. Devolve ``True`` se houve handoff."""
@@ -226,20 +254,6 @@ class Pipeline:
         state["current_node"] = node.next
         state["turns_in_node"] = 0
 
-    async def _redigir(
-        self, state: dict[str, Any], user_msg: str, node: Any, templates: list[str]
-    ) -> str:
-        """Chama o redator. Falha cai no template do roteiro, se houver."""
-        entrada = composer.montar_entrada(
-            user_msg=user_msg, node=node, routine=self.routine, state=state, say_templates=templates
-        )
-        try:
-            saida = await self.redator.arun(entrada)
-            return str(saida.content or "").strip()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("pipeline.redator_falhou err=%r", exc)
-            return templates[0] if templates else ""
-
     def _guardar(self, texto: str, state: dict[str, Any], templates: list[str]) -> str:
         """Aplica os guardas. Texto reprovado cai para o template do roteiro.
 
@@ -265,6 +279,28 @@ class Pipeline:
 # --------------------------------------------------------------------------
 # helpers
 # --------------------------------------------------------------------------
+
+
+def _comandos_de(saida: Any, state: dict[str, Any]) -> list[Command]:
+    """Extrai a lista de comandos da saída do extrator, seja qual for a forma.
+
+    O Agno pode entregar o objeto do ``output_schema`` ou o texto cru quando o
+    modelo não respeita o schema. Nesse caso o turno segue sem extração — o
+    lead recebe resposta, só perde a informação daquele turno.
+    """
+    if saida is None:
+        return []
+    if isinstance(saida, CommandGenOutput):
+        if saida.state_summary:
+            state["state_summary"] = saida.state_summary
+        return list(saida.commands)
+    if isinstance(saida, dict) and "commands" in saida:
+        try:
+            return list(CommandGenOutput.model_validate(saida).commands)
+        except Exception:  # noqa: BLE001
+            return []
+    logger.warning("pipeline.extrator_sem_schema tipo=%s", type(saida).__name__)
+    return []
 
 
 def _node_dict(node: Any, state: dict[str, Any]) -> dict[str, Any]:

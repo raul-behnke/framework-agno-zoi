@@ -47,6 +47,12 @@ INSTRUCOES = [
         "sem exceção, mesmo que o fluxo pareça incompleto."
     ),
     (
+        "Slot com valores declarados (enum): use EXATAMENTE um dos valores da "
+        "lista, nunca a fala do lead verbatim. Se o que ele disse corresponde a "
+        "mais de um valor, escolha o que representa o conjunto — a fiscalização "
+        "descarta valor ambíguo em vez de adivinhar, e o dado se perde."
+    ),
+    (
         "Se não houver nada a extrair, devolva a lista vazia. Lista vazia é uma "
         "resposta correta e comum."
     ),

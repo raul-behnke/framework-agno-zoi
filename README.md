@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** Fase 4 em curso. O pipeline de turno **funciona ponta a ponta com LLM real** — coleta, tool, sinal, roteamento e despedida. Faltam: expressar o pipeline como steps do Workflow do Agno, os três cérebros de paridade (planner, crítico, tom) e o gate contra os goldens.
+> **Estado:** Fase 4 em curso. O pipeline roda **como Workflow do Agno**, com estado persistido por `session_id`, e conversa de ponta a ponta com LLM real. Faltam: os três cérebros de paridade (planner, crítico, tom), paridade de prompts com o v4, e o gate contra os goldens.
 
 ## A ideia central
 
@@ -61,7 +61,7 @@ Um step-função que declara `run_context` recebe o `session_state` vivo; a escr
 | `gateway.py` | `routing.yaml` → modelo por papel + cadeia de fallback |
 | `guards/` | Anti-invenção e frases proibidas, determinísticos |
 | `tools/` | Registro resolvido pelo `config.yaml` do tenant |
-| `builder.py` | *(pendente)* `RoutineAst → agno.Workflow` |
+| `builder.py` | `Tenant → agno.Workflow` + `WorkflowRuntime` |
 
 **Regra dura:** nada em `zoi_agno/` conhece o nome de um tenant. Vertical nova é pasta nova em `tenants/`, zero linha de Python.
 
@@ -173,3 +173,21 @@ OPENAI_API_KEY=... uv run pytest   # +3 conversas com LLM real
 ```
 
 Os testes com modelo real não afirmam texto literal — o modelo varia. Afirmam propriedades: o que o lead disse virou estado, o que o agente ofereceu veio de um payload, o pedido de humano foi respeitado.
+
+## O pipeline como Workflow
+
+```python
+from agno.db.postgres import PostgresDb
+from zoi_agno.builder import WorkflowRuntime
+from zoi_agno.tenants import load_tenant
+
+rt = WorkflowRuntime(load_tenant("t_demo"), db=PostgresDb(db_url=...))
+turno = await rt.turno(session_id="whatsapp:5521999...", user_msg="oi, quero cortar o cabelo")
+print(turno.texto, turno.finished, turno.handoff)
+```
+
+Cinco Steps: `ingress` → **extract** 🤖 → `processar` → **compose** 🤖 → `finalizar`. Os três em fonte normal são funções puras sobre o `session_state`; os dois em negrito são os únicos que falam com um modelo.
+
+**Por que cinco steps e não um por nó do roteiro.** O grafo da conversa é interpretado em runtime pelo executor; a topologia do Workflow é a do *turno*, que é sempre a mesma. Um Step por nó exigiria recompilar o Workflow a cada routine publicada, e ainda assim não expressaria o roteamento — que depende de estado, não de posição. Um `Router` aqui seria decoração: escolheria sempre o mesmo caminho.
+
+O `session_id` é a thread da conversa. O estado vem do `db` e volta para ele a cada turno — é o que substitui o checkpointer do LangGraph.
