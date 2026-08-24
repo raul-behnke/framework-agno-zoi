@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** Fase 2 de 10. Esqueleto de pé, contrato com o Agno validado por teste, e a fiscalização portada com as 20 rules na ordem. O executor e os cérebros ainda não existem.
+> **Estado:** Fase 3 de 10. Esqueleto, contrato com o Agno, fiscalização (20 rules na ordem) e **executor determinístico**. Os três tenants de produção são percorridos do início ao fim sem LLM. Os cérebros ainda não existem.
 
 ## A ideia central
 
@@ -55,7 +55,7 @@ Um step-função que declara `run_context` recebe o `session_state` vivo; a escr
 | `state.py` | O `session_state` de uma conversa |
 | `tenants.py` | Carrega os artefatos YAML de um tenant |
 | `enforcement/` | As 20 rules, na ordem, + o barramento soft/hard/never/transform |
-| `executor/` | *(Fase 3)* o `advance()` — 8 tipos de nó |
+| `executor/` | O `advance()` — move o cursor pelos 8 tipos de nó, sem LLM |
 | `brains/` | *(Fase 4)* planner, extrator, redator, crítico, tom |
 | `builder.py` | *(Fase 4)* `RoutineAst → agno.Workflow` |
 
@@ -112,3 +112,23 @@ Para carregar tenants de outro diretório:
 ```bash
 ZOI_TENANTS_DIR=/caminho/para/tenants uv run pytest
 ```
+
+## O executor
+
+`advance()` é a fronteira mais importante do runtime: **nenhuma linha dele chama um LLM**. Ele lê o `session_state`, olha o nó atual e decide para onde ir.
+
+Nós que não conversam — `decide`, `say`, `call_subroutine`, um `collect` já satisfeito — são atravessados no mesmo passo. O lead não deve esperar um turno por uma decisão que o código já sabe tomar.
+
+Duas invariantes que o porte revelou, e que valem para qualquer implementação:
+
+**A saída do `freetalk` é por sinal, não só por timeout.** É a materialização de "autonomia com contrato": o LLM escreve o que quiser dentro do escopo, mas termina emitindo um dos `signals` declarados, e o `decide` seguinte consome. Sem essa porta, todo lead sai por timeout e cai no mesmo destino, independentemente do que tenha dito.
+
+**Nenhum nó é revisitado dentro de um mesmo passo.** Revisitar é sempre ciclo — o estado não mudou entre os dois momentos, então o roteamento se repetiria para sempre. Caso real do `zoi_sdr`: um `freetalk` estoura `max_turns`, o `exit_on_timeout` cai num `decide` cujo guard exige um slot derivado que ainda não existe, e o `else` volta ao mesmo `freetalk`. A trava para e devolve a palavra ao lead; `max_hops` fica como rede de última instância.
+
+### Verificado contra produção
+
+```bash
+ZOI_REAL_TENANTS_DIR=/caminho/tenants uv run pytest
+```
+
+Os três tenants de produção (`imob_sdr`, `sal_imports`, `zoi_sdr` — 14 a 47 nós, até 8 sub-rotinas e 9 desfechos) são percorridos do nó inicial até um `end` declarado, por seis estratégias diferentes, de forma determinística e sem rede.

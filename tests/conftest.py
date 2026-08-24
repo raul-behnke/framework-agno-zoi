@@ -44,3 +44,6 @@ def ctx(**over: Any) -> dict[str, Any]:
 def cmd(kind: str, payload: dict[str, Any], **over: Any) -> Command:
     """Atalho para montar um Command válido."""
     return Command.model_validate({"kind": kind, "payload": payload, **over})
+
+
+FIXTURES_TENANTS = __import__("pathlib").Path(__file__).parent / "fixtures" / "tenants"
