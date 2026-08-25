@@ -217,10 +217,27 @@ main:
         não invente política, prazo, taxa nem valor.
         Depois de responder, retome o carro: pergunte se ele quer seguir com
         alguma das opções que você mostrou, e emita `respondido`.
+        Se, ao responder, ele ESCOLHER um veículo ("gostei do Duster, quero
+        esse"), registre `veiculo_escolhido` com o `codigo` EXATO da opção e
+        emita `escolheu` — a escolha vale aqui igual vale na apresentação.
         Pediu pessoa ou quis negociar valor → `quer_humano`.
         Desistiu → `desistiu`.
-      scope: "Responder dúvida sobre a loja e retomar a apresentação."
-      signals: [respondido, quer_humano, desistiu]
+      scope: "Responder dúvida sobre a loja, capturar escolha, retomar."
+      # `escolheu` e `slots` NÃO são decoração: o lead escolhe o carro logo
+      # depois de tirar a dúvida, e a escolha chega DENTRO deste nó.
+      #
+      # Sem `escolheu` na lista, o único caminho de saída era `respondido` →
+      # `ft_apresenta`, e o agente reapresentava o estoque para quem acabou de
+      # escolher. Sem `slots`, `pipeline._derivar_sinal_de_escolha` nem roda
+      # (ela exige `node.signals AND node.slots`): o extrator gravava o slot,
+      # não emitia sinal, e o cursor CONGELAVA aqui — 3 de 5 execuções na
+      # medição de 2026-08-25. A conversa seguia no nó de dúvida com o lead já
+      # tendo escolhido, e o funil nunca fechava.
+      #
+      # A ORDEM importa: a derivação usa `signals[0]` como o sinal de escolha
+      # bem-sucedida (convenção herdada do v4). `escolheu` tem que vir primeiro.
+      signals: [escolheu, respondido, quer_humano, desistiu]
+      slots: [veiculo_escolhido]
       max_turns: 3
       exit_on_timeout: e_nutricao
       next: d_faq
@@ -229,6 +246,7 @@ main:
       type: decide
       name: "Depois da dúvida"
       branches:
+        - { on_signal: escolheu, next: d_escolha_valida }
         - { on_signal: respondido, next: ft_apresenta }
         - { on_signal: quer_humano, next: e_handoff }
         - { on_signal: desistiu, next: e_nutricao }

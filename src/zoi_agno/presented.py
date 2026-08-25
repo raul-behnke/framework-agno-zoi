@@ -46,34 +46,6 @@ def queryable_candidates(state: Any) -> list[dict[str, Any]]:
         return []
 
 
-def live_candidate_ids(state: Any) -> list[str]:
-    """Ids (``codigo``, fallback ``id``) from the CURRENT LIVE search result
-    only — deliberately excludes ``_presented_candidates``.
-
-    Review finding #2 (2026-07-18, recomendação consultiva) — the recommend
-    -cap thrashing check in ``plan_executor.py`` used to source its ids from
-    ``queryable_candidates`` (the union with ``_presented_candidates``, which
-    only ever GROWS across searches — see module docstring). Comparing that
-    growing union round-over-round means "no brand-new codigo appeared", not
-    "the live candidate set didn't shrink/change" — on a small/exhausted
-    catalog a refinement returning only already-seen codigos would falsely
-    look identical to the previous round and trip thrashing prematurely.
-    This accessor is the live-only source both the cap check
-    (``plan_executor.py``) and the side-channel round counter
-    (``turn_manager.py::_maybe_explore_research``) must use for round-over-
-    round comparisons, so "did the search genuinely stall" is judged from
-    what THIS round's search actually returned.
-    """
-    try:
-        collected = state.get("collected") or {}
-        sr = collected.get("search_result") or {}
-        live = sr.get("candidates") if isinstance(sr, dict) else None
-        live = [c for c in live if isinstance(c, dict)] if isinstance(live, list) else []
-        return [str(c.get("codigo") or c.get("id") or "") for c in live]
-    except Exception:  # noqa: BLE001 — read helper, never raise into a turn
-        return []
-
-
 _PRESENTED_CAP = 12
 
 

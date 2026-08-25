@@ -28,6 +28,35 @@ class TenantNotFoundError(Exception):
     """O diretório do tenant não existe, ou não tem routine."""
 
 
+def avisos_de_freetalk(ast: RoutineAst) -> list[str]:
+    """Freetalk que coleta e não sabe sair.
+
+    Isto NÃO vive no validador do ``zoi-routine``: a regra não é do DSL, é
+    deste runtime, onde a saída de um freetalk é por sinal.
+
+    Só o caso inequívoco entra aqui. O inverso — sinais sem slots — é forma
+    LEGÍTIMA e comum: ``ft_sem_estoque``, ``ft_objecoes`` e afins existem só
+    para rotear, não coletam nada. Avisar sobre eles encheria o boot de
+    alarme falso, e alarme falso treina gente a ignorar aviso. Quando um
+    freetalk sem slots recebe um ``set_slot`` de verdade — a condição exata
+    que congela o cursor — quem avisa é ``pipeline._derivar_sinal_de_escolha``,
+    em runtime, com zero falso positivo.
+    """
+    avisos: list[str] = []
+    blocos = [("main", ast.main)] + list(ast.sub_routines.items())
+    for escopo, bloco in blocos:
+        for node_id, node in bloco.nodes.items():
+            if getattr(node, "type", "") != "freetalk":
+                continue
+            if getattr(node, "slots", None) and not getattr(node, "signals", None):
+                onde = node_id if escopo == "main" else f"{escopo}.{node_id}"
+                avisos.append(
+                    f"freetalk {onde!r} declara slots e nenhum signal: o nó coleta "
+                    "mas não tem contrato de saída"
+                )
+    return avisos
+
+
 @dataclass(frozen=True)
 class Tenant:
     """Os artefatos de um tenant, já parseados."""
@@ -91,7 +120,7 @@ def load_tenant(tenant_id: str, *, base_dir: Path | str | None = None) -> Tenant
         )
 
     ast = parse_routine(routines[0].read_text(encoding="utf-8"), tenant_id=tenant_id)
-    warnings = validate_routine(ast)
+    warnings = validate_routine(ast) + avisos_de_freetalk(ast)
 
     return Tenant(
         tenant_id=tenant_id,

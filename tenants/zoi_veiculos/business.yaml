@@ -51,6 +51,15 @@ business:
   branch_gating_slots:
     possui_troca: c_troca
     metodo_negociacao: c_negociacao
+  # Sem isto a rule catalog_choice_scope fica inerte — ela não adivinha como
+  # este roteiro chamou o slot da escolha nem onde a tool gravou o resultado.
+  # Mesma lição da rule de agenda na Barbearia: proteção que depende do autor
+  # acertar um nome fixo não protege vertical nova.
+  escolha_de_item:
+    slot: veiculo_escolhido
+    payload: estoque
+    lista: candidates
+    campo_id: codigo
   card_presentation:
     enabled: false
   eval_thresholds:

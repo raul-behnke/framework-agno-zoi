@@ -12,6 +12,7 @@ import pytest
 from zoi_agno.enforcement.album_scope import AlbumScopeRule
 from zoi_agno.enforcement.appointment_slot_scope import AppointmentSlotScopeRule
 from zoi_agno.enforcement.branch_gating_slot import BranchGatingSlotRule
+from zoi_agno.enforcement.catalog_choice_scope import CatalogChoiceScopeRule
 from zoi_agno.enforcement.collect_group_exit import CollectGroupExitRule
 from zoi_agno.enforcement.confidence import ConfidenceThresholdRule
 from zoi_agno.enforcement.cost_cap_v4 import CostCapRule
@@ -230,6 +231,74 @@ async def test_horario_da_agenda_e_aceito(estado) -> None:
     assert (
         await AppointmentSlotScopeRule().check(
             cmd("set_slot", {"slot": "slot_escolhido", "value": "2026-08-25T14:00"}), estado, ctx()
+        )
+        is None
+    )
+
+
+# --------------------------------------------------------------------------
+# catalog_choice_scope — item escolhido tem que ter sido oferecido
+# --------------------------------------------------------------------------
+
+CFG_ESCOLHA = {"escolha_de_item": {"slot": "veiculo_escolhido", "payload": "estoque"}}
+ESTOQUE = {"estoque": {"candidates": [{"codigo": "SUV-005"}, {"codigo": "SUV-004"}], "total": 2}}
+
+
+async def test_nome_legivel_no_lugar_do_codigo_e_rejeitado(estado) -> None:
+    """Medição de 2026-08-25: em 2 de 5 execuções o extrator gravou
+    "Renault Duster Iconic 2020" em vez de "SUV-005". O guard do roteiro testa
+    só presença do campo, então o valor inválido passava e a qualificação
+    seguia apontando para item nenhum."""
+    estado["collected"].update(ESTOQUE)
+    r = await CatalogChoiceScopeRule().check(
+        cmd("set_slot", {"slot": "veiculo_escolhido", "value": "Renault Duster Iconic 2020"}),
+        estado,
+        ctx(business=CFG_ESCOLHA),
+    )
+    assert r is not None and r.code == "choice_not_in_catalog"
+    assert r.extra["offered"] == ["SUV-004", "SUV-005"]
+
+
+async def test_codigo_do_catalogo_e_aceito(estado) -> None:
+    estado["collected"].update(ESTOQUE)
+    assert (
+        await CatalogChoiceScopeRule().check(
+            cmd("set_slot", {"slot": "veiculo_escolhido", "value": "SUV-005"}),
+            estado,
+            ctx(business=CFG_ESCOLHA),
+        )
+        is None
+    )
+
+
+async def test_sem_config_a_rule_e_inerte(estado) -> None:
+    """Vertical sem catálogo não paga nada pela rule."""
+    estado["collected"].update(ESTOQUE)
+    assert (
+        await CatalogChoiceScopeRule().check(
+            cmd("set_slot", {"slot": "veiculo_escolhido", "value": "inventado"}), estado, ctx()
+        )
+        is None
+    )
+
+
+async def test_sem_busca_no_estado_nao_valida(estado) -> None:
+    """A conversa nem apresentou nada ainda — não há contra o que validar."""
+    assert (
+        await CatalogChoiceScopeRule().check(
+            cmd("set_slot", {"slot": "veiculo_escolhido", "value": "SUV-005"}),
+            estado,
+            ctx(business=CFG_ESCOLHA),
+        )
+        is None
+    )
+
+
+async def test_outro_slot_passa_direto(estado) -> None:
+    estado["collected"].update(ESTOQUE)
+    assert (
+        await CatalogChoiceScopeRule().check(
+            cmd("set_slot", {"slot": "nome", "value": "Raul"}), estado, ctx(business=CFG_ESCOLHA)
         )
         is None
     )

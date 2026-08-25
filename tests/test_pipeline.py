@@ -106,6 +106,35 @@ async def test_tool_e_executada_e_o_payload_vira_estado(pipe) -> None:
     assert st["tool_call_log"][0]["ref"] == "agenda_livre"
 
 
+async def test_candidatos_da_busca_entram_no_store_duravel(pipe) -> None:
+    """O slot de saída guarda só a última busca; o store guarda todas.
+
+    `accumulate_presented` existia e não era chamada por ninguém —
+    `_presented_candidates` ficava `[]` para sempre, e as duas proteções que
+    leem esse canal (o guard de fabricação e a rule album_scope) liam lista
+    vazia. Uma segunda busca sobrescrevia a primeira e o lead que dizia
+    "aquele primeiro mesmo" virava citação de item inexistente.
+    """
+    from zoi_routine.ast import ToolNode
+
+    p, st = pipe
+    node = ToolNode(kind="python", ref="busca", output_to="estoque", next="e_fim")
+
+    rodadas = iter(
+        [
+            {"candidates": [{"codigo": "A-1"}], "total": 1},
+            {"candidates": [{"codigo": "B-2"}], "total": 1},
+        ]
+    )
+    p.tools = {"busca": lambda **_: next(rodadas)}
+    await p._executar_tool(st, node)
+    await p._executar_tool(st, node)
+
+    assert st["collected"]["estoque"]["candidates"] == [{"codigo": "B-2"}], "slot guarda a última"
+    codigos = [c["codigo"] for c in st["_presented_candidates"]]
+    assert codigos == ["B-2", "A-1"], "o store durável guarda as duas, novas primeiro"
+
+
 def test_argumentos_da_tool_sao_resolvidos_do_estado(pipe) -> None:
     from zoi_agno.pipeline import _render_args
 

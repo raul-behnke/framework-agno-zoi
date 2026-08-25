@@ -27,6 +27,7 @@ from zoi_agno.enforcement.dispatcher_v4 import DispatcherV4
 from zoi_agno.executor import advance, current_node, end_de_handoff
 from zoi_agno.executor.advance import WaitSemRepo
 from zoi_agno.guards import checar_frases_proibidas, checar_grounding
+from zoi_agno.presented import accumulate_presented
 from zoi_agno.state import reset_turn
 from zoi_agno.tenants import Tenant
 from zoi_agno.tools import ToolDesconhecida, build_registry, call
@@ -376,7 +377,27 @@ class Pipeline:
         herdada do v4: o primeiro sinal declarado é o de escolha bem-sucedida.
         """
         node = current_node(self.routine, state)
-        if not isinstance(node, FreeTalkNode) or not node.signals or not node.slots:
+        if not isinstance(node, FreeTalkNode) or not node.signals:
+            return
+        if not node.slots:
+            # Nó de roteamento puro (ft_sem_estoque e afins) que ACABOU de
+            # receber um set_slot: o lead respondeu ou escolheu dentro de um
+            # freetalk que não declara slots. A derivação não pode agir (não
+            # sabe qual slot representa a escolha), então o turno grava o dado
+            # e não emite sinal — e o cursor congela aqui.
+            #
+            # Foi o que aconteceu no `ft_faq` do zoi_veiculos: 3 de 5
+            # execuções travavam, e nada no log dizia por quê. O aviso é em
+            # runtime, e não no boot, porque a forma "sinais sem slots" é
+            # legítima na maioria dos nós — só vira defeito quando um set_slot
+            # de fato chega.
+            if any(c.kind == "set_slot" for c in aceitos):
+                logger.warning(
+                    "pipeline.freetalk_sem_slots no=%s recebeu set_slot %s — "
+                    "declare `slots:` neste nó, ou o cursor fica preso nele",
+                    state.get("current_node"),
+                    [c.payload.slot for c in aceitos if c.kind == "set_slot"],
+                )
             return
         if any(c.kind == "signal" for c in aceitos):
             return  # o extrator emitiu; respeitamos a escolha dele
@@ -424,6 +445,17 @@ class Pipeline:
 
         if node.output_to:
             state.setdefault("collected", {})[node.output_to] = payload
+        # O slot de saída guarda só a ÚLTIMA busca. Uma segunda rodada
+        # sobrescreve a primeira, e a partir daí o lead que diz "aquele
+        # primeiro mesmo" fala de um item que o estado não conhece mais: o
+        # guard de fabricação acusa código inventado e a rule album_scope
+        # barra a foto de um carro que a loja realmente apresentou.
+        #
+        # `accumulate_presented` existia para isso e não era chamada por
+        # ninguém — `_presented_candidates` ficava `[]` para sempre, e as duas
+        # proteções que leem esse canal liam lista vazia.
+        if isinstance(payload, dict) and payload.get("candidates"):
+            accumulate_presented(state, payload["candidates"])
         state.setdefault("tool_call_log", []).append({"ref": node.ref, "args": args})
         state["current_node"] = node.next
         state["turns_in_node"] = 0

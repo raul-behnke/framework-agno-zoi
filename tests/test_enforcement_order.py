@@ -22,9 +22,22 @@ def test_a_fila_construida_segue_a_ordem_declarada() -> None:
     assert tuple(r.name for r in default_rules()) == RULE_ORDER
 
 
-def test_sao_vinte_rules() -> None:
-    assert len(RULE_ORDER) == 20
-    assert len(set(RULE_ORDER)) == 20, "nome de rule duplicado"
+def test_sao_vinte_e_uma_rules() -> None:
+    assert len(RULE_ORDER) == 21
+    assert len(set(RULE_ORDER)) == 21, "nome de rule duplicado"
+
+
+def test_escopo_do_catalogo_roda_junto_ao_escopo_da_agenda() -> None:
+    """As duas metades do mesmo problema andam juntas.
+
+    ``appointment_slot_scope`` garante que o horário veio da agenda;
+    ``catalog_choice_scope`` garante que o item veio da busca. Ambas depois de
+    ``slot_validator`` (a forma do valor já foi checada) e antes das rules de
+    sinal, que é onde a escolha vira roteamento.
+    """
+    assert _pos("catalog_choice_scope") == _pos("appointment_slot_scope") + 1
+    assert _pos("catalog_choice_scope") > _pos("slot_validator")
+    assert _pos("catalog_choice_scope") < _pos("signal_normalize")
 
 
 def test_toda_rule_expoe_name_e_check() -> None:

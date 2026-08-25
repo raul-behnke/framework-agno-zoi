@@ -38,6 +38,7 @@ RULE_ORDER: tuple[str, ...] = (
     "interrogative_user_msg",
     "slot_validator",
     "appointment_slot_scope",
+    "catalog_choice_scope",
     "subflow_v4",
     "plan_reach",
     "say_scope",
@@ -65,6 +66,7 @@ def default_rules(*, metrics: Any = None, presidio: Any = None) -> list[Enforcem
     from zoi_agno.enforcement.album_scope import AlbumScopeRule
     from zoi_agno.enforcement.appointment_slot_scope import AppointmentSlotScopeRule
     from zoi_agno.enforcement.branch_gating_slot import BranchGatingSlotRule
+    from zoi_agno.enforcement.catalog_choice_scope import CatalogChoiceScopeRule
     from zoi_agno.enforcement.collect_group_exit import CollectGroupExitRule
     from zoi_agno.enforcement.confidence import ConfidenceThresholdRule
     from zoi_agno.enforcement.cost_cap_v4 import CostCapRule
@@ -94,6 +96,7 @@ def default_rules(*, metrics: Any = None, presidio: Any = None) -> list[Enforcem
         SlotValidatorRule(),
         # Horário escolhido ∈ agenda oferecida — mata booking fabricado.
         AppointmentSlotScopeRule(),
+        CatalogChoiceScopeRule(),
         SubflowRule(),
         PlanReachabilityRule(),
         SayScopeRule(),
