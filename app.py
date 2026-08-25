@@ -126,7 +126,17 @@ def main() -> int:
         # INFO por padrão: serviço mudo é indistinguível de serviço morto.
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        # force=True é o que faz esta chamada valer. agno e litellm configuram
+        # o logging no momento do IMPORT, e os imports rodam antes daqui —
+        # sem force, basicConfig é no-op e o root fica no nível deles. O
+        # sintoma: WARNING aparecia e INFO não, então o banner de subida
+        # sumia e o serviço parecia morto.
+        force=True,
     )
+    # litellm loga cada chamada em INFO; num bot com 5 cérebros por turno
+    # isso enterra o que importa.
+    logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     carregar_env(Path(__file__).parent / ".env")
     return asyncio.run(rodar(args.tenant, dados=args.dados, tenants_dir=args.tenants))
 
