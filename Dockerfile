@@ -4,6 +4,13 @@ FROM python:3.12-slim
 # uv resolve e instala em segundos; o build inteiro cabe em duas camadas.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# git é dependência de BUILD, não de runtime: `zoi-routine` é instalado do
+# repositório. A imagem slim não o traz, e o erro só aparece no build limpo —
+# localmente o pacote já estava em cache.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
