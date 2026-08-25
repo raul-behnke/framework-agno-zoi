@@ -1,0 +1,6 @@
+# Espelha o routing de produção: mesmo modelo por papel, para que a demo
+# tenha o mesmo comportamento dos tenants reais.
+roles:
+  agent:     { primary: gpt-5.4-mini, fallbacks: [gpt-4o] }
+  extractor: { primary: gpt-5.4-mini, fallbacks: [gpt-4o-mini] }
+  judge:     { primary: gpt-5.4-mini, fallbacks: [gpt-4o-mini] }

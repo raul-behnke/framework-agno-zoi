@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** rodando no Telegram. Pipeline como Workflow do Agno, cinco cérebros, esperas duráveis, tenants de produção offline e 12 goldens limpos. Falta deploy.
+> **Estado:** rodando no Telegram, com a primeira vertical de vitrine no ar. Pipeline como Workflow do Agno, cinco cérebros, esperas duráveis, dois tenants de produção offline e 12 goldens limpos. Falta deploy.
 
 ## A ideia central
 
@@ -328,3 +328,30 @@ Long polling, sem webhook. É escolha deliberada: o canal Telegram do v4 tem 3.7
 **Dedup.** O Telegram reentrega um update quando o ack se perde.
 
 **Comandos de canal:** `/start` deixa o agente abrir na voz da persona, `/reset` começa outra conversa, `/estado` mostra nó e slots.
+
+## Verticais
+
+| Tenant | O que é | Prova |
+|---|---|---|
+| `sal_imports` | tenant de produção, catálogo fixture | migração 1:1, motor de catálogo |
+| `imob_sdr` | tenant de produção, catálogo local | sub-rotinas, agendamento |
+| `zoi_barbearia` | **fictício**, para vitrine | fluxo curto que fecha em 3 turnos |
+
+A Barbearia é a primeira vertical de demonstração. Fluxo curto de propósito: agendamento fecha em 3 a 5 turnos, e é isso que a torna demonstrável — um funil de 15 turnos impressiona menos porque ninguém chega ao fim.
+
+```
+CLIENTE> oi, sou o Téo, quero fazer a barba
+DINHO  > Boa, Téo.
+         Tenho terça às 9 ou terça às 14. Qual fica melhor?
+
+CLIENTE> pode ser quinta às 8 da noite?
+DINHO  > Quinta às 20h não tenho, não.
+         Tenho terça às 14h ou quarta às 9h. Qual fica melhor?
+
+CLIENTE> então a de terça às 9
+DINHO  > Fechado, Téo! Agendei seu horário.
+         Chega uns 5 minutinhos antes, se der.
+         [horario = barba:2026-09-01T09:00]
+```
+
+O segundo turno é o interessante: o cliente pediu um horário que não existe e o agente **disse que não tem**, em vez de inventar ou prometer encaixe. Três camadas trabalhando juntas — a rule que barra horário fora da agenda, o guard do roteiro que impede confirmar sem horário, e o grounding que só deixa citar o que a agenda devolveu.

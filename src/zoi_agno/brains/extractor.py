@@ -160,6 +160,40 @@ def _contexto_do_no(node: Any, routine: Any) -> str:
     return f"Nó atual do tipo {type(node).__name__}."
 
 
+def opcoes_apresentadas(node: Any, collected: dict[str, Any], *, limite: int = 12) -> str:
+    """As opções que o lead pode escolher, com o id exato de cada uma.
+
+    Só num nó que captura slots — é lá que a resposta dele é um *pick*.
+
+    Sem este bloco o extrator recebe a instrução de "usar o id exato" e não
+    tem como: a projeção de contexto tira os payloads de tool da visão dele,
+    de propósito, para não duplicar o blob. O resultado era o lead escolher
+    "terça às 9", o extrator gravar o rótulo, a rule de agendamento barrar
+    (corretamente) e a conversa ficar pedindo confirmação para sempre.
+    """
+    if not isinstance(node, FreeTalkNode) or not node.slots:
+        return ""
+    linhas: list[str] = []
+    for payload in collected.values():
+        if not isinstance(payload, dict):
+            continue
+        itens = payload.get("slots") or payload.get("candidates") or payload.get("items") or []
+        for item in itens[:limite]:
+            if not isinstance(item, dict):
+                continue
+            ident = item.get("slot_id") or item.get("codigo") or item.get("id")
+            if not ident:
+                continue
+            rotulo = item.get("label") or item.get("nome") or item.get("titulo") or ""
+            linhas.append(f"  - id={ident!r}" + (f"  ({rotulo})" if rotulo else ""))
+    if not linhas:
+        return ""
+    return (
+        "OPÇÕES JÁ APRESENTADAS ao lead. Ao gravar a escolha, use o `id` "
+        "EXATO desta lista, nunca o rótulo:\n" + "\n".join(linhas)
+    )
+
+
 def build(routing: dict[str, Any] | None = None, db: Any = None) -> Agent:
     """O agente extrator, com saída estruturada nos 15 comandos."""
     return Agent(
@@ -183,6 +217,8 @@ def montar_entrada(user_msg: str, node: Any, routine: Any, collected: dict[str, 
     fluxo = contexto_de_fluxo({"collected": collected})
     ja = ", ".join(f"{k}={v!r}" for k, v in fluxo.slots.items()) or "nada"
     partes = [linha_de_hoje(), _contexto_do_no(node, routine)]
+    if opcoes := opcoes_apresentadas(node, collected):
+        partes.append(opcoes)
     if manifesto := manifesto_de_slots(routine, node):
         partes.append(manifesto)
     partes += [f"Já coletado nesta conversa: {ja}", f"Mensagem do lead: {user_msg!r}"]

@@ -1,0 +1,48 @@
+routine_name: sdr_barbearia
+
+business:
+  company: |
+    Barbearia ZOI — negócio FICTÍCIO, criado para demonstrar o agente.
+    Três profissionais (Marcinho, Ju e Tiago), atendimento com hora marcada.
+  offer: |
+    Agendamento de corte, barba, combo e infantil. O agente marca o horário;
+    preço, encaixe e reclamação são do balcão.
+  scope: |
+    O agente marca horário. NÃO negocia preço, NÃO promete encaixe, NÃO
+    garante profissional sem a agenda confirmar, NÃO resolve reclamação.
+
+    Escala para humano quando: o cliente pede uma pessoa, quer negociar
+    valor, reclama de atendimento anterior, ou pede algo fora de
+    agendamento.
+  business_rules: |
+    - NUNCA oferecer horário que não veio da agenda. Se não tem, dizer que
+      não tem e oferecer o mais próximo que existe.
+    - Preço: a tabela fica no balcão. Nunca citar valor.
+    - Profissional específico só se a agenda daquele profissional tiver vaga.
+    - Agenda cheia não é fim: oferecer aviso de vaga ou encaminhamento.
+  guarded_signals:
+    # `quer_humano` só é aceito com evidência na fala — o extrator tende a
+    # disparar sinal de escalada em qualquer frase negativa.
+    quer_humano:
+      - "falar com"
+      - "atendente"
+      - "pessoa"
+      - "humano"
+      - "gerente"
+      - "reclamar"
+      - "reclamação"
+      - "desconto"
+      - "negociar"
+  card_presentation:
+    enabled: false
+  eval_thresholds:
+    process_adherence_min_pct: 80
+    response_quality_min_approved_pct: 75
+    attack_success_rate_max_pct: 5
+  agendamento:
+    # Sem isto a rule appointment_slot_scope fica inerte: ela procura por
+    # `slot_escolhido` / `available_slots`, que é a convenção do v4, e este
+    # roteiro chama os campos de outra coisa. O agente aceitaria horário
+    # inventado sem ninguém notar.
+    slot_de_horario: horario
+    payload_da_agenda: agenda

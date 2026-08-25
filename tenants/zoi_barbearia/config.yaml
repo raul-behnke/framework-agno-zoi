@@ -1,0 +1,7 @@
+# Agenda fictícia e determinística: a mesma conversa produz os mesmos
+# horários em toda execução, então um golden que cita horário não quebra
+# amanhã.
+tools:
+  agenda_livre:
+    kind: ghl_calendar
+    max_slots: 4

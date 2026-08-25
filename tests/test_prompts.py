@@ -243,3 +243,40 @@ def test_o_manifesto_marca_so_o_que_esta_sendo_perguntado() -> None:
     m = manifesto_de_slots(t.routine, current_node(t.routine, st))
     assert "▶ horario" in m
     assert "▶ nome" not in m
+
+
+def test_no_de_escolha_recebe_os_ids_das_opcoes() -> None:
+    """Sem os ids, a instrução de "use o id exato" é impossível de cumprir.
+
+    A projeção de contexto tira os payloads de tool da visão do extrator, de
+    propósito, para não duplicar o blob. Mas num nó de escolha ele PRECISA
+    dos ids: o lead escolhia "terça às 9", o extrator gravava o rótulo, a
+    rule de agendamento barrava (corretamente) e a conversa ficava pedindo
+    confirmação para sempre.
+    """
+    from zoi_agno.brains.extractor import opcoes_apresentadas
+
+    t = _tenant()
+    st = _estado(current_node="ft_escolhe")
+    collected = {
+        "agenda": {
+            "slots": [
+                {"slot_id": "corte:2026-09-01T09:00", "label": "terça às 09:00"},
+                {"slot_id": "corte:2026-09-01T14:00", "label": "terça às 14:00"},
+            ]
+        }
+    }
+    bloco = opcoes_apresentadas(current_node(t.routine, st), collected)
+    assert "corte:2026-09-01T09:00" in bloco
+    assert "terça às 09:00" in bloco
+    assert "EXATO" in bloco
+
+
+def test_no_sem_escolha_nao_recebe_as_opcoes() -> None:
+    """Payload de tool num nó de coleta é ruído: infla o prompt sem uso."""
+    from zoi_agno.brains.extractor import opcoes_apresentadas
+
+    t = _tenant()
+    st = _estado()  # c_abertura, um collect_group
+    collected = {"agenda": {"slots": [{"slot_id": "x", "label": "y"}]}}
+    assert opcoes_apresentadas(current_node(t.routine, st), collected) == ""

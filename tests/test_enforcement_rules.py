@@ -516,3 +516,33 @@ async def test_pii_so_olha_say_freetalk(kind: str, estado) -> None:
         await PIIRule(pipeline=NuncaChamado()).check(cmd(kind, payloads[kind]), estado, ctx())
         is None
     )
+
+
+async def test_a_rule_de_horario_e_configuravel_por_tenant(estado) -> None:
+    """Rule que depende de o autor adivinhar o nome não protege vertical nova.
+
+    No v4 os nomes eram fixos (``slot_escolhido`` / ``available_slots``).
+    Descoberto na Barbearia, onde os campos são ``horario`` e ``agenda``: a
+    rule existia, estava na fila, e não checava absolutamente nada.
+    """
+    estado["collected"]["agenda"] = {"slots": [{"slot_id": "barba:2026-09-01T09:00"}]}
+    c = ctx(business={"agendamento": {"slot_de_horario": "horario", "payload_da_agenda": "agenda"}})
+
+    inventado = await AppointmentSlotScopeRule().check(
+        cmd("set_slot", {"slot": "horario", "value": "terça às 11"}), estado, c
+    )
+    assert inventado is not None and inventado.code == "slot_not_in_offer"
+
+    valido = await AppointmentSlotScopeRule().check(
+        cmd("set_slot", {"slot": "horario", "value": "barba:2026-09-01T09:00"}), estado, c
+    )
+    assert valido is None
+
+
+async def test_sem_configuracao_a_rule_usa_a_convencao_do_v4(estado) -> None:
+    """Os tenants portados continuam funcionando sem tocar no business.yaml."""
+    estado["collected"]["available_slots"] = {"slots": [{"slot_id": "2026-09-01T14:00"}]}
+    r = await AppointmentSlotScopeRule().check(
+        cmd("set_slot", {"slot": "slot_escolhido", "value": "inventado"}), estado, ctx()
+    )
+    assert r is not None and r.code == "slot_not_in_offer"

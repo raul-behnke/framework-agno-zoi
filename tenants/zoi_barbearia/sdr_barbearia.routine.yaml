@@ -1,0 +1,191 @@
+# Barbearia ZOI — negócio FICTÍCIO, para demonstração.
+#
+# Fluxo curto de propósito: agendamento fecha em 3 a 5 turnos, que é o que
+# torna a demo demonstrável. Um funil de 15 turnos impressiona menos porque
+# ninguém chega ao fim.
+
+routine_name: sdr_barbearia
+version: 1
+
+flow_goal: |
+  Agendar um horário na Barbearia ZOI. Descobrir o serviço, oferecer os
+  horários que a agenda tem, capturar a escolha e confirmar. Lead que pede
+  uma pessoa, quer negociar preço ou reclamar de atendimento anterior vai
+  direto para o handoff — nada disso é do agente. Nunca inventar horário:
+  só o que a agenda devolveu.
+
+slots:
+  nome:
+    type: string
+    required: true
+    description: "Como o cliente quer ser chamado."
+  servico:
+    type: enum
+    values: [corte, barba, combo, infantil]
+    required: true
+    description: "Serviço desejado. combo = corte + barba."
+  profissional:
+    type: enum
+    values: [tanto_faz, marcinho, ju, tiago]
+    description: "Preferência de barbeiro. tanto_faz acelera o agendamento."
+  agenda:
+    type: string
+    description: "Payload de horários livres (JSON)."
+  horario:
+    type: string
+    description: "slot_id do horário escolhido."
+  primeira_vez:
+    type: enum
+    values: [sim, nao]
+    description: "Primeira vez na barbearia."
+
+main:
+  start: c_abertura
+  nodes:
+
+    # Abertura: nome e serviço juntos. Slots co-locados fazem o extrator
+    # capturar os dois de uma frase só ("sou o Téo, quero barba").
+    c_abertura:
+      type: collect_group
+      name: "Abertura"
+      group_name: abertura
+      exit_policy: all
+      max_turns: 3
+      on_max_turns: t_agenda
+      fields:
+        - name: nome
+          cluster: contexto
+          required: true
+          question: "opa! aqui é da Barbearia ZOI. como é seu nome?"
+        - name: servico
+          cluster: identificacao
+          required: true
+          question: "é corte, barba, os dois ou infantil?"
+        - name: profissional
+          cluster: contexto
+          required: false
+        - name: primeira_vez
+          cluster: contexto
+          required: false
+      next: t_agenda
+
+    t_agenda:
+      type: tool
+      name: "Buscar horários livres"
+      kind: python
+      ref: agenda_livre
+      args:
+        servico: "{{ lead.servico }}"
+        profissional: "{{ lead.profissional }}"
+        max_results: 4
+      output_to: agenda
+      next: d_tem_horario
+
+    d_tem_horario:
+      type: decide
+      name: "Tem horário livre?"
+      branches:
+        - on_field: agenda.total
+          on_value: 0
+          next: ft_sem_horario
+      else: ft_escolhe
+
+    ft_escolhe:
+      type: freetalk
+      name: "Oferecer horários"
+      goal: |
+        Ofereça os horários de `state.collected.agenda`. Duas ou três opções,
+        nunca a lista inteira — escolher entre três é fácil, entre oito é
+        trabalho.
+        NUNCA ofereça horário que não esteja no payload, mesmo que o cliente
+        peça um dia específico: se não tem, diga que não tem e ofereça o mais
+        próximo que existe.
+        Quando ele escolher, registre `horario` com o slot_id EXATO da opção
+        (não o rótulo legível) e emita `escolheu`.
+        Pediu pessoa, quis negociar preço, ou reclamou de atendimento
+        anterior → `quer_humano`. Desistiu → `desistiu`.
+      scope: "Oferecer horários da agenda e capturar a escolha."
+      signals: [escolheu, quer_humano, desistiu]
+      slots: [horario]
+      max_turns: 4
+      exit_on_timeout: e_nutricao
+      reasoner_tier: standard
+      next: d_escolha
+
+    d_escolha:
+      type: decide
+      name: "O que o cliente decidiu?"
+      branches:
+        - { on_signal: escolheu, next: d_horario_valido }
+        - { on_signal: quer_humano, next: e_handoff }
+        - { on_signal: desistiu, next: e_nutricao }
+      else: e_nutricao
+
+    # Guard determinístico: sinal não é agendamento.
+    #
+    # Descoberto rodando a demo — o cliente pediu um horário que não existe,
+    # a rule appointment_slot_scope corretamente barrou o set_slot, mas o
+    # extrator emitiu `escolheu` mesmo assim. Sem este guard o fluxo ia para
+    # a confirmação e o agente dizia "agendei seu horário" com o slot vazio.
+    #
+    # Só passa com `horario` preenchido — e ele só é preenchido com um
+    # slot_id que a agenda devolveu.
+    d_horario_valido:
+      type: decide
+      name: "O horário foi mesmo escolhido?"
+      branches:
+        - { on_field: horario, next: say_confirma }
+      else: ft_escolhe
+
+    say_confirma:
+      type: say
+      name: "Confirmação"
+      templates:
+        - "Fechado, {{ lead.nome }}! Agendei seu horário."
+        - "Chega uns 5 minutinhos antes, se der."
+      bubbles: { min: 1, max: 2 }
+      next: e_agendado
+
+    ft_sem_horario:
+      type: freetalk
+      name: "Agenda cheia"
+      goal: |
+        A agenda não tem horário livre para o que ele pediu. Seja direto:
+        diga que está cheio e ofereça DOIS caminhos — avisar quando abrir
+        vaga, ou falar com alguém do salão. Não invente horário nem prometa
+        encaixe.
+        Mapeie para: `avisar` (topa esperar) ou `quer_humano`.
+      scope: "Agenda cheia; oferecer aviso ou encaminhamento."
+      signals: [avisar, quer_humano]
+      max_turns: 2
+      exit_on_timeout: e_nutricao
+      next: d_sem_horario
+
+    d_sem_horario:
+      type: decide
+      name: "Caminho com agenda cheia"
+      branches:
+        - { on_signal: avisar, next: e_nutricao }
+        - { on_signal: quer_humano, next: e_handoff }
+      else: e_nutricao
+
+    e_agendado:
+      type: end
+      name: "Agendado"
+      outcome: completed
+      role: success
+      farewell: "Te espero! Qualquer coisa é só chamar aqui. 👊"
+
+    e_handoff:
+      type: end
+      name: "Encaminhado ao salão"
+      outcome: handed_off
+      role: handoff
+      farewell: "Beleza! Já passo pro pessoal do salão, eles te chamam aqui."
+
+    e_nutricao:
+      type: end
+      name: "Sem agendamento"
+      outcome: handed_off
+      role: nurture
+      farewell: "Tranquilo! Quando quiser marcar é só me chamar. 👍"
