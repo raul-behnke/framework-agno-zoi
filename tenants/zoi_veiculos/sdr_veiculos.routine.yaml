@@ -165,14 +165,20 @@ main:
         NUNCA ofereça veículo que não esteja no payload, mesmo que ele peça
         uma marca específica: se não tem, diga que não tem e ofereça o mais
         próximo que existe.
-        Quando ele demonstrar interesse num carro, registre
-        `veiculo_escolhido` com o `codigo` EXATO da opção (não o nome
-        legível) e emita `escolheu`.
-        Perguntou sobre a loja (horário, endereço, garantia, troca,
+        Quando ele demonstrar interesse num carro, confirme a escolha dele
+        e siga a conversa.
+      # O `scope` é o campo que o EXTRATOR lê (`extractor.montar_entrada` usa
+      # `node.scope or node.goal`); o `goal` vai para o REDATOR. Mapeamento de
+      # sinal mora aqui, não lá — no goal ele era invisível para quem devia
+      # obedecer e virava ordem literal para quem escreve a bolha.
+      scope: |
+        Apresentar veículos do estoque e capturar o que interessou.
+        Interesse num carro: registre `veiculo_escolhido` com o `codigo`
+        EXATO da opção (nunca o nome legível) e emita `escolheu`.
+        Pergunta sobre a loja (horário, endereço, garantia, troca,
         financiamento, test drive, documentação) → `duvida`.
         Pediu pessoa, quis negociar valor, ou quis saber quanto vale o carro
         dele → `quer_humano`. Desistiu → `desistiu`.
-      scope: "Apresentar veículos do estoque e capturar o que interessou."
       signals: [escolheu, duvida, quer_humano, desistiu]
       slots: [veiculo_escolhido]
       max_turns: 6
@@ -216,13 +222,15 @@ main:
         Se a pergunta não estiver no FAQ, diga que vai confirmar com a loja —
         não invente política, prazo, taxa nem valor.
         Depois de responder, retome o carro: pergunte se ele quer seguir com
-        alguma das opções que você mostrou, e emita `respondido`.
-        Se, ao responder, ele ESCOLHER um veículo ("gostei do Duster, quero
-        esse"), registre `veiculo_escolhido` com o `codigo` EXATO da opção e
-        emita `escolheu` — a escolha vale aqui igual vale na apresentação.
+        alguma das opções que você mostrou.
+      scope: |
+        Responder dúvida sobre a loja, capturar escolha, retomar.
+        Dúvida respondida e conversa retomada → `respondido`.
+        Se ele ESCOLHER um veículo ao responder ("gostei do Duster, quero
+        esse"), registre `veiculo_escolhido` com o `codigo` EXATO e emita
+        `escolheu` — a escolha vale aqui igual vale na apresentação.
         Pediu pessoa ou quis negociar valor → `quer_humano`.
         Desistiu → `desistiu`.
-      scope: "Responder dúvida sobre a loja, capturar escolha, retomar."
       # `escolheu` e `slots` NÃO são decoração: o lead escolhe o carro logo
       # depois de tirar a dúvida, e a escolha chega DENTRO deste nó.
       #
@@ -356,8 +364,10 @@ main:
         não tem nada nesse perfil agora e ofereça DOIS caminhos — avisar
         quando entrar algo assim, ou falar com o consultor de pátio.
         Não invente veículo nem prometa que "deve chegar".
-        Mapeie para: `avisar` (topa esperar) ou `quer_humano`.
-      scope: "Estoque sem match; oferecer aviso ou encaminhamento."
+      scope: |
+        Estoque sem match; oferecer aviso ou encaminhamento.
+        Topa esperar a vaga → `avisar`. Quer falar com alguém do pátio →
+        `quer_humano`.
       signals: [avisar, quer_humano]
       max_turns: 2
       exit_on_timeout: e_nutricao

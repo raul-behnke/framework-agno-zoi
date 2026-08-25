@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from agno.agent import Agent
@@ -182,6 +183,52 @@ def _tarefa_handoff(state: dict[str, Any]) -> str:
     )
 
 
+# Marcadores de que a linha fala com o EXTRATOR, não com o redator.
+# A presença de um nome de sinal não basta: `avisar`, `gostou` e `escolheu`
+# também são palavras comuns em português, e "ofereça DOIS caminhos — avisar
+# quando abrir vaga" é instrução de escrita legítima que não pode sumir.
+_MARCADORES_DE_COMANDO = ("emita", "sinal", "signal", "mapeie", "→", "->")
+
+
+def _linha_e_para_o_extrator(linha: str, sinais: list[str]) -> bool:
+    baixa = linha.lower()
+    if not any(re.search(rf"\b{re.escape(s)}\b", linha) for s in sinais):
+        return False
+    if any(m in baixa for m in _MARCADORES_DE_COMANDO):
+        return True
+    # Sinal entre crases é notação de comando, não prosa.
+    return any(f"`{s}`" in linha for s in sinais)
+
+
+def _goal_para_o_redator(node: Any) -> str:
+    """O ``goal`` sem as linhas que instruem a EMITIR comando.
+
+    O ``goal`` do freetalk é entregue verbatim ao redator como TAREFA, e o
+    redator é um gerador de texto: uma linha que diz "emita `respondido`" é
+    cumprida escrevendo a palavra. Medido em 2026-08-25, no ``ft_faq`` do
+    zoi_veiculos: 3 de 4 rascunhos terminavam com "respondido" solto, e 2
+    chegavam ao lead. Um foi limpo por acaso na reescrita de tom — sorte, não
+    proteção.
+
+    Essas linhas não fazem falta a ninguém: o extrator NÃO lê o ``goal``
+    (``extractor.montar_entrada`` usa ``node.scope or node.goal``, e todo
+    freetalk real declara ``scope``), e os nomes dos sinais já chegam a ele
+    numa lista própria e explícita. Ou seja, a instrução estava no documento
+    errado: invisível para quem devia obedecer, e ordem literal para quem não
+    devia.
+
+    Filtro por LINHA, com marcador de comando exigido — ver
+    ``_linha_e_para_o_extrator``. Instrução de escrita que por acaso usa uma
+    palavra que também é nome de sinal continua passando.
+    """
+    goal = getattr(node, "goal", "") or ""
+    sinais = list(getattr(node, "signals", []) or [])
+    if not goal or not sinais:
+        return goal
+    mantidas = [l for l in goal.splitlines() if not _linha_e_para_o_extrator(l, sinais)]
+    return "\n".join(mantidas).strip()
+
+
 def _tarefa(node: Any, routine: Any, state: dict[str, Any]) -> str:
     """O que este nó específico pede do redator."""
     collected = state.get("collected") or {}
@@ -204,7 +251,10 @@ def _tarefa(node: Any, routine: Any, state: dict[str, Any]) -> str:
         return f"TAREFA: faça esta pergunta, com as suas palavras: {node.question!r}"
 
     if isinstance(node, FreeTalkNode):
-        return f"TAREFA (conversa livre, dentro deste escopo):\n{node.goal or node.scope}"
+        return (
+            "TAREFA (conversa livre, dentro deste escopo):\n"
+            f"{_goal_para_o_redator(node) or node.scope}"
+        )
 
     if isinstance(node, EndNode):
         if node.farewell:

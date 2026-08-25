@@ -123,7 +123,13 @@ Nós que não conversam — `decide`, `say`, `call_subroutine`, um `collect` já
 
 Duas invariantes que o porte revelou, e que valem para qualquer implementação:
 
+**`scope` fala com o extrator; `goal` fala com o redator.** Num `freetalk`, `extractor.montar_entrada` lê `node.scope or node.goal` e `composer._tarefa` lê o `goal` — ou seja, quando o nó declara os dois (e todo nó real declara), o `goal` NUNCA chega ao extrator e o `scope` NUNCA chega ao redator.
+
+Consequência prática: **mapeamento de sinal mora no `scope`**. Escrever "emita `respondido`" no `goal` não instrui o extrator — ele não lê aquilo — e instrui o redator, que é um gerador de texto e cumpre escrevendo a palavra na bolha do lead. Medido no `ft_faq` do `zoi_veiculos`: 3 de 4 rascunhos terminavam com "respondido" solto. O filtro em `composer._goal_para_o_redator` e o guarda `limpar_nomes_de_sinal` cobrem o erro, mas quem escreve roteiro não deveria depender deles.
+
 **A saída do `freetalk` é por sinal, não só por timeout.** É a materialização de "autonomia com contrato": o LLM escreve o que quiser dentro do escopo, mas termina emitindo um dos `signals` declarados, e o `decide` seguinte consome. Sem essa porta, todo lead sai por timeout e cai no mesmo destino, independentemente do que tenha dito.
+
+**Um `decide` nunca é lugar de descanso do cursor.** Ele não tem pergunta nem escopo: parar em cima de um deixa o redator sem tarefa, e o que sobra é o plano — ele improvisa a pergunta da etapa seguinte, de um nó onde a conversa nunca esteve. Quando o guard de ciclo barra a saída de um `decide`, o cursor vai para o destino assim mesmo e o próximo turno reavalia.
 
 **Nenhum nó é revisitado dentro de um mesmo passo.** Revisitar é sempre ciclo — o estado não mudou entre os dois momentos, então o roteamento se repetiria para sempre. Caso real do `zoi_sdr`: um `freetalk` estoura `max_turns`, o `exit_on_timeout` cai num `decide` cujo guard exige um slot derivado que ainda não existe, e o `else` volta ao mesmo `freetalk`. A trava para e devolve a palavra ao lead; `max_hops` fica como rede de última instância.
 

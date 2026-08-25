@@ -9,6 +9,7 @@ fluxo manda "apresentar opções".
 from __future__ import annotations
 
 from datetime import datetime
+from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 from zoi_agno.brains import composer, extractor
@@ -280,3 +281,56 @@ def test_no_sem_escolha_nao_recebe_as_opcoes() -> None:
     st = _estado()  # c_abertura, um collect_group
     collected = {"agenda": {"slots": [{"slot_id": "x", "label": "y"}]}}
     assert opcoes_apresentadas(current_node(t.routine, st), collected) == ""
+
+
+# --------------------------------------------------------------------------
+# nome de sinal não vaza para a bolha do lead
+# --------------------------------------------------------------------------
+
+
+def test_goal_do_freetalk_perde_as_linhas_de_comando() -> None:
+    """O `goal` é entregue ao redator como TAREFA, e ele obedece literalmente.
+
+    Medição 2026-08-25 no `ft_faq` do zoi_veiculos: 3 de 4 rascunhos
+    terminavam com a palavra "respondido" solta, 2 chegavam ao lead. As
+    linhas de comando não fazem falta a ninguém — o extrator lê `scope`, não
+    `goal`, e recebe os nomes dos sinais numa lista própria.
+    """
+    from zoi_agno.brains.composer import _goal_para_o_redator
+
+    class _No:
+        signals: ClassVar[list[str]] = ["respondido", "avisar"]
+        goal = (
+            "Responda a dúvida com o FAQ.\n"
+            "Depois retome o carro e emita `respondido`.\n"
+            "Ofereça DOIS caminhos — avisar quando abrir vaga."
+        )
+
+    saida = _goal_para_o_redator(_No())
+    assert "respondido" not in saida, "linha de comando devia ter caído"
+    assert "avisar quando abrir vaga" in saida, (
+        "instrução de ESCRITA que usa uma palavra homônima de sinal não pode cair"
+    )
+
+
+def test_nome_de_sinal_pendurado_e_removido_da_bolha() -> None:
+    from zoi_agno.guards import limpar_nomes_de_sinal
+
+    texto, removidos = limpar_nomes_de_sinal(
+        "Quer seguir com o Duster ou com a Tracker? respondido", ["respondido"]
+    )
+    assert texto == "Quer seguir com o Duster ou com a Tracker?"
+    assert removidos == ["respondido"]
+
+
+def test_palavra_comum_homonima_de_sinal_sobrevive() -> None:
+    """`avisar`, `gostou` e `escolheu` são palavras do português.
+
+    O guarda só tira o fragmento pendurado depois de uma frase terminada —
+    senão ele mutila a resposta em vez de limpá-la.
+    """
+    from zoi_agno.guards import limpar_nomes_de_sinal
+
+    texto, removidos = limpar_nomes_de_sinal("Posso te avisar quando abrir vaga", ["avisar"])
+    assert texto == "Posso te avisar quando abrir vaga"
+    assert removidos == []

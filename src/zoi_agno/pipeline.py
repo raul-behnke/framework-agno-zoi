@@ -26,7 +26,7 @@ from zoi_agno.enforcement import default_rules
 from zoi_agno.enforcement.dispatcher_v4 import DispatcherV4
 from zoi_agno.executor import advance, current_node, end_de_handoff
 from zoi_agno.executor.advance import WaitSemRepo
-from zoi_agno.guards import checar_frases_proibidas, checar_grounding
+from zoi_agno.guards import checar_frases_proibidas, checar_grounding, limpar_nomes_de_sinal
 from zoi_agno.presented import accumulate_presented
 from zoi_agno.state import reset_turn
 from zoi_agno.tenants import Tenant
@@ -466,6 +466,13 @@ class Pipeline:
         Preferimos a cópia autorada do roteiro a uma frase que o dado não
         sustenta — melhor genérico que errado.
         """
+        # Antes das checagens: nome de sinal pendurado no fim da bolha é
+        # vocabulário interno vazando, não conteúdo errado. Sai o fragmento e
+        # o resto do texto segue — derrubar a bolha inteira para o template
+        # seria pior que tirar uma palavra.
+        node = current_node(self.routine, state)
+        texto, _ = limpar_nomes_de_sinal(texto, list(getattr(node, "signals", []) or []))
+
         violacoes = checar_grounding(texto, state) + checar_frases_proibidas(
             texto, self.tenant.persona
         )
