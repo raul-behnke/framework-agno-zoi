@@ -1,0 +1,5 @@
+# Espelha o routing de produção: mesmo modelo por papel.
+roles:
+  agent:     { primary: gpt-5.4-mini, fallbacks: [gpt-4o] }
+  extractor: { primary: gpt-5.4-mini, fallbacks: [gpt-4o-mini] }
+  judge:     { primary: gpt-5.4-mini, fallbacks: [gpt-4o-mini] }

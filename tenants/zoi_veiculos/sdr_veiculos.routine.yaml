@@ -1,0 +1,367 @@
+# Revenda ZOI — negócio FICTÍCIO, para demonstração.
+#
+# Ordem deliberada: mostra carro ANTES de qualificar. Quem chegou por anúncio
+# quer ver o carro, não responder formulário — pedir CPF antes de mostrar
+# estoque é o jeito mais rápido de perder o lead. A qualificação pesada
+# (troca, pagamento, crédito) só entra depois que ele demonstrou interesse
+# num veículo concreto.
+
+routine_name: sdr_veiculos
+version: 1
+
+flow_goal: |
+  Vender um seminovo da Revenda ZOI. Descobrir o perfil, buscar no estoque,
+  apresentar o que existe, e qualificar a negociação: troca (e os dados dela),
+  forma de pagamento e, quando for financiamento, entrada, CPF e data de
+  nascimento para a simulação do banco. Lead que pede uma pessoa, quer
+  negociar valor ou quer saber quanto vale a troca dele vai direto para o
+  handoff. Nunca inventar veículo: só o que a busca devolveu.
+
+slots:
+  nome:
+    type: string
+    required: true
+    description: "Como o cliente quer ser chamado."
+  categoria_interesse:
+    type: enum
+    values: [suv, hatch, sedan, utilitario, qualquer]
+    required: true
+    description: "Tipo de veículo procurado. qualquer = está aberto."
+  veiculo_interesse:
+    type: string
+    description: "Modelo ou marca que ele citou, se citou. Texto livre."
+  orcamento:
+    type: string
+    description: "Faixa de investimento, como ele falou ('uns 90 mil', 'até 120k')."
+  estoque:
+    type: string
+    description: "Payload de veículos encontrados (JSON)."
+  veiculo_escolhido:
+    type: string
+    description: "codigo EXATO do veículo que interessou."
+
+  # ---- qualificação da negociação ----
+  possui_troca:
+    type: enum
+    values: [sim, nao]
+    description: "Tem veículo para dar na troca."
+  # O cliente responde "Onix 2018" numa frase só. Sem estas descrições o
+  # extrator enfia tudo em `troca_modelo`, `troca_ano` nunca preenche e o
+  # collect_group fica perguntando o ano em loop até estourar max_turns.
+  troca_modelo:
+    type: string
+    description: "SÓ o modelo do veículo de troca, sem o ano. 'Onix 2018' → 'Onix'."
+  troca_ano:
+    type: string
+    description: "SÓ o ano do veículo de troca, 4 dígitos. 'Onix 2018' → '2018'."
+  troca_km:
+    type: string
+    description: "Quilometragem do veículo de troca."
+  troca_quitado:
+    type: enum
+    values: [quitado, financiado]
+    description: |
+      Situação do veículo DE TROCA (o carro que o cliente já tem), não a forma
+      de pagamento do carro novo. 'seria financiado' falando do carro que ele
+      quer comprar NÃO preenche este slot.
+  metodo_negociacao:
+    type: enum
+    values: [avista, financiamento, consorcio]
+    description: "Como pretende pagar."
+  fin_entrada:
+    type: enum
+    values: [sim, nao]
+    description: "Tem valor de entrada para o financiamento."
+  cpf:
+    type: string
+    description: "CPF para a simulação do banco. Só no fluxo de financiamento."
+  nascimento:
+    type: string
+    description: "Data de nascimento para a simulação. Só no fluxo de financiamento."
+
+main:
+  start: c_abertura
+  nodes:
+
+    # Abertura de revenda: ancora no anúncio e pergunta o CARRO primeiro, o
+    # nome depois.
+    #
+    # A ordem importa. Quem chega por anúncio já tem um veículo na cabeça e
+    # quer falar dele; abrir por "qual seu nome?" faz o agente parecer
+    # cadastro, não vendedor. Perguntar o carro primeiro também aproveita o
+    # que o lead já mandou na primeira frase ("vi o anúncio do Compass").
+    #
+    # Os campos continuam co-locados: "sou o Marcos, procuro um SUV até 120
+    # mil" preenche três de uma vez. A ordem só governa QUAL pergunta o
+    # agente faz quando o lead não adiantou nada.
+    #
+    # Orçamento é opcional de propósito — insistir nele antes de mostrar
+    # carro espanta o lead, e o motor de busca funciona sem ele.
+    c_abertura:
+      type: collect_group
+      name: "Abertura"
+      group_name: abertura
+      exit_policy: all
+      max_turns: 4
+      on_max_turns: t_busca
+      fields:
+        - name: categoria_interesse
+          cluster: identificacao
+          required: true
+          question: "opa! aqui é o Léo, da Revenda ZOI. vi que você se interessou por um carro nosso — qual era?"
+        - name: veiculo_interesse
+          cluster: identificacao
+          required: false
+          question: "tem algum modelo em mente, ou tá aberto?"
+        - name: nome
+          cluster: contexto
+          required: true
+          question: "show. e como é seu nome?"
+        - name: orcamento
+          cluster: financeiro
+          required: false
+          question: "pra eu já filtrar certo: você pensa em investir até qual faixa?"
+      next: t_busca
+
+    t_busca:
+      type: tool
+      name: "Buscar no estoque"
+      kind: python
+      ref: veiculo_search
+      args:
+        categoria: "{{ lead.categoria_interesse }}"
+        modelo: "{{ lead.veiculo_interesse }}"
+        max_valor_brl: "{{ lead.orcamento }}"
+        max_results: 3
+      output_to: estoque
+      next: d_tem_estoque
+
+    d_tem_estoque:
+      type: decide
+      name: "Tem carro no pátio?"
+      branches:
+        - on_field: estoque.total
+          on_value: 0
+          next: ft_sem_estoque
+      else: ft_apresenta
+
+    ft_apresenta:
+      type: freetalk
+      name: "Apresentar estoque"
+      goal: |
+        Apresente os veículos de `state.collected.estoque`. DUAS opções por
+        vez, nunca a lista inteira — escolher entre duas é fácil, entre seis
+        é trabalho. Modelo, ano, km e preço numa frase só.
+        NUNCA ofereça veículo que não esteja no payload, mesmo que ele peça
+        uma marca específica: se não tem, diga que não tem e ofereça o mais
+        próximo que existe.
+        Quando ele demonstrar interesse num carro, registre
+        `veiculo_escolhido` com o `codigo` EXATO da opção (não o nome
+        legível) e emita `escolheu`.
+        Perguntou sobre a loja (horário, endereço, garantia, troca,
+        financiamento, test drive, documentação) → `duvida`.
+        Pediu pessoa, quis negociar valor, ou quis saber quanto vale o carro
+        dele → `quer_humano`. Desistiu → `desistiu`.
+      scope: "Apresentar veículos do estoque e capturar o que interessou."
+      signals: [escolheu, duvida, quer_humano, desistiu]
+      slots: [veiculo_escolhido]
+      max_turns: 6
+      exit_on_timeout: e_nutricao
+      reasoner_tier: standard
+      next: d_apresenta
+
+    d_apresenta:
+      type: decide
+      name: "O que o cliente decidiu?"
+      branches:
+        - { on_signal: escolheu, next: d_escolha_valida }
+        - { on_signal: duvida, next: ft_faq }
+        - { on_signal: quer_humano, next: e_handoff }
+        - { on_signal: desistiu, next: e_nutricao }
+      else: e_nutricao
+
+    # Guard determinístico: sinal não é escolha.
+    #
+    # Mesma cicatriz do agendamento da Barbearia: o cliente pergunta por um
+    # carro que não existe, a rule de escopo barra o set_slot, mas o extrator
+    # emite `escolheu` mesmo assim. Sem este guard o fluxo entra na
+    # qualificação pedindo CPF para negociar um veículo vazio.
+    d_escolha_valida:
+      type: decide
+      name: "O veículo foi mesmo escolhido?"
+      branches:
+        - { on_field: veiculo_escolhido, next: c_troca }
+      else: ft_apresenta
+
+    ft_faq:
+      type: freetalk
+      name: "Dúvida sobre a loja"
+      goal: |
+        Ele perguntou algo sobre a loja, não sobre um carro específico.
+        Responda usando SOMENTE os 15 tópicos do FAQ da sua missão
+        (endereço, horário, troca, bancos, financiamento, consórcio,
+        garantia, laudo cautelar, documentação, test drive, reserva,
+        entrega, venda online, PCD/blindado, preço). Uma resposta curta e
+        direta — responda o que foi perguntado, não recite o tópico inteiro.
+        Se a pergunta não estiver no FAQ, diga que vai confirmar com a loja —
+        não invente política, prazo, taxa nem valor.
+        Depois de responder, retome o carro: pergunte se ele quer seguir com
+        alguma das opções que você mostrou, e emita `respondido`.
+        Pediu pessoa ou quis negociar valor → `quer_humano`.
+        Desistiu → `desistiu`.
+      scope: "Responder dúvida sobre a loja e retomar a apresentação."
+      signals: [respondido, quer_humano, desistiu]
+      max_turns: 3
+      exit_on_timeout: e_nutricao
+      next: d_faq
+
+    d_faq:
+      type: decide
+      name: "Depois da dúvida"
+      branches:
+        - { on_signal: respondido, next: ft_apresenta }
+        - { on_signal: quer_humano, next: e_handoff }
+        - { on_signal: desistiu, next: e_nutricao }
+      else: ft_apresenta
+
+    # ============================================================
+    # Qualificação da negociação — só depois do interesse concreto
+    # ============================================================
+
+    c_troca:
+      type: collect
+      name: "Tem troca?"
+      slot: possui_troca
+      validator: sim_nao
+      question: "boa escolha! você tem carro na troca?"
+      next: d_troca
+
+    d_troca:
+      type: decide
+      name: "Tem veículo de troca?"
+      branches:
+        - { on_field: possui_troca, on_value: sim, next: c_dados_troca }
+      else: c_negociacao
+
+    # Os quatro dados da troca num grupo só: o cliente costuma despejar tudo
+    # junto ("Onix 2018, 60 mil km, quitado") e um collect por campo faria
+    # quatro perguntas para uma resposta já dada.
+    c_dados_troca:
+      type: collect_group
+      name: "Dados da troca"
+      group_name: troca
+      exit_policy: all
+      max_turns: 4
+      on_max_turns: c_negociacao
+      fields:
+        - name: troca_modelo
+          cluster: identificacao
+          required: true
+          question: "qual o modelo e o ano do seu carro?"
+        - name: troca_ano
+          cluster: identificacao
+          required: true
+          question: "que ano ele é?"
+        - name: troca_km
+          cluster: identificacao
+          required: true
+          question: "quantos km ele tem, mais ou menos?"
+        - name: troca_quitado
+          cluster: financeiro
+          required: true
+          question: "ele tá quitado ou ainda tem financiamento em aberto?"
+      next: c_negociacao
+
+    c_negociacao:
+      type: collect
+      name: "Forma de negociação"
+      slot: metodo_negociacao
+      validator: "opcoes:avista,financiamento,consorcio"
+      question: "e a negociação seria à vista, financiada, ou você tem consórcio contemplado?"
+      next: d_metodo
+
+    d_metodo:
+      type: decide
+      name: "Precisa de simulação de crédito?"
+      branches:
+        - { on_field: metodo_negociacao, on_value: financiamento, next: c_financiamento }
+      else: say_fecha
+
+    # CPF e nascimento só chegam aqui, e só porque o banco exige para a
+    # simulação. Pedir antes disso é o que faz um lead sumir.
+    c_financiamento:
+      type: collect_group
+      name: "Dados da simulação"
+      group_name: credito
+      exit_policy: all
+      max_turns: 4
+      on_max_turns: say_fecha
+      fields:
+        - name: fin_entrada
+          cluster: financeiro
+          required: true
+          question: "você tem valor de entrada, ou seria financiado integral?"
+        - name: cpf
+          cluster: financeiro
+          required: true
+          question: "pra rodar a simulação o banco pede seu CPF. pode me passar?"
+        - name: nascimento
+          cluster: financeiro
+          required: true
+          question: "e sua data de nascimento?"
+      next: say_fecha
+
+    say_fecha:
+      type: say
+      name: "Encerramento qualificado"
+      templates:
+        - "Fechou, {{ lead.nome }}! Já tenho tudo que preciso aqui."
+        - "Vou passar pro consultor de pátio, ele te chama pra fechar os detalhes."
+      bubbles: { min: 1, max: 2 }
+      next: e_qualificado
+
+    ft_sem_estoque:
+      type: freetalk
+      name: "Sem carro no perfil"
+      goal: |
+        A busca não achou veículo para o que ele pediu. Seja direto: diga que
+        não tem nada nesse perfil agora e ofereça DOIS caminhos — avisar
+        quando entrar algo assim, ou falar com o consultor de pátio.
+        Não invente veículo nem prometa que "deve chegar".
+        Mapeie para: `avisar` (topa esperar) ou `quer_humano`.
+      scope: "Estoque sem match; oferecer aviso ou encaminhamento."
+      signals: [avisar, quer_humano]
+      max_turns: 2
+      exit_on_timeout: e_nutricao
+      next: d_sem_estoque
+
+    d_sem_estoque:
+      type: decide
+      name: "Caminho sem estoque"
+      branches:
+        - { on_signal: avisar, next: e_nutricao }
+        - { on_signal: quer_humano, next: e_handoff }
+      else: e_nutricao
+
+    e_qualificado:
+      type: end
+      name: "Lead qualificado"
+      outcome: completed
+      role: success
+      # Curto de propósito: o say_fecha já disse que o consultor assume. Uma
+      # despedida que repete a mesma frase soa a robô confirmando duas vezes.
+      farewell: "Até logo! 🚗"
+
+    e_handoff:
+      type: end
+      name: "Encaminhado ao consultor"
+      outcome: handed_off
+      role: handoff
+      farewell: "Beleza! Já passo pro consultor de pátio, ele te chama aqui."
+
+    e_nutricao:
+      type: end
+      name: "Sem negociação agora"
+      outcome: handed_off
+      role: nurture
+      farewell: "Tranquilo! Quando quiser dar uma olhada é só me chamar. 👍"

@@ -1,0 +1,81 @@
+# Motor de busca do estoque. Catálogo local (catalog.yaml), sem rede e sem
+# CRM — mesma decisão da Fase 3.5 do plano.
+tools:
+  veiculo_search:
+    kind: catalog
+    module: zoi_agno.tools.catalog_search
+    name: veiculo_search
+    catalog_key: veiculos          # lê tenants/zoi_veiculos/catalog.yaml
+    id_field: codigo
+    max_results: { default: 3, min: 1, max: 6 }
+    serialize:
+      - codigo
+      - nome
+      - marca
+      - modelo
+      - versao
+      - categoria
+      - ano
+      - km
+      - cambio
+      - combustivel
+      - cor
+      - valor_brl
+      - descricao
+      - opcionais
+      - unico_dono
+      - ipva_pago
+      - laudo_cautelar
+      - garantia_meses
+      - aceita_troca
+      - foto_url
+      - fotos
+    filters:
+      - { field: categoria, op: eq, from_input: categoria, ignore_values: [qualquer] }
+      # Orçamento é constraint dura: quem diz "até 90 mil" não quer ver 220 mil.
+      # Estouro tem porta própria (over_budget_fallback), não relaxa aqui.
+      - { field: valor_brl, op: lte, from_input: max_valor_brl, coerce: money_brl, hard: true }
+      # Ano declarado = PISO real (>=). Vazio quando o lead não fala ano
+      # (filtro inativo). Relaxável via widen, step -2.
+      - { field: ano, op: gte, from_input: ano_minimo, coerce: year }
+    scorers:
+      # Modelo em mente → fuzzy no nome E no modelo. Quem diz "Corolla" pode
+      # querer o sedan ou o Corolla Cross; o fuzzy acha os dois e o resto
+      # do ranking decide.
+      - from_input: modelo
+        match: fuzzy_multi
+        weight: 1
+        tiers:
+          - { field: nome, exact: 30, partial: 15, symmetric: true }
+          - { field: modelo, exact: 25, partial: 12, symmetric: true }
+          - { field: marca, exact: 10, partial: 5, symmetric: true }
+      - { from_input: categoria, field: categoria, match: eq, weight: 8, ignore_values: [qualquer] }
+      # Faixa de preço = âncora suave (prioriza perto/abaixo do orçamento).
+      - { from_input: max_valor_brl, field: valor_brl, match: near, coerce: money_brl, tiers: [[0.85, 6], [1.0, 3]] }
+      # Ano: boost só quando vier número. "carro novo" vago → inativo.
+      - { from_input: ano_minimo, field: ano, match: near, coerce: year, tiers: [[1.0, 4], [1.02, 2]] }
+      # Câmbio é scorer, NUNCA filter: metade do pátio é automático e um
+      # filtro hard em "manual" derruba o estoque inteiro para quem só tem
+      # leve preferência.
+      - { from_input: cambio, field: cambio, match: eq, weight: 6 }
+    # widen priority = custo de compromisso (1 = o lead cede primeiro).
+    # Constraint dura (preço) NÃO entra aqui — usa over_budget_fallback.
+    widen:
+      # Ano cede antes da categoria: quem quer SUV aceita um ano mais velho
+      # antes de aceitar um hatch. step -2 anos por iteração.
+      ano_minimo: { auto: true, op: step, from_input: ano_minimo, coerce: year, step: -2, priority: 1 }
+      categoria:  { auto: true, op: drop_score_gate, from_input: categoria, priority: 2 }
+    # Diversidade de preço: sem isto, "SUV até 140 mil" devolve três carros
+    # de 132 a 141 mil e o lead não tem escolha real.
+    diversity: { field: valor_brl, min_gap_pct: 0.15 }
+    over_budget_fallback:
+      field: valor_brl
+      from_input: max_valor_brl
+      coerce: money_brl
+      max_k: 3
+      interactive: true
+      max_stretch_pct: 0.25
+      named_model: true
+    # Modelo NOMEADO sem casamento no estoque (ex.: "tem Ranger?") → sinaliza
+    # not_found para o agente declarar honesto, em vez de trocar em silêncio.
+    disclose_named_not_found: true

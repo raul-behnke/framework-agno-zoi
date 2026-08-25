@@ -1,0 +1,488 @@
+# Estoque FICTÍCIO da Revenda ZOI — fixture, não é o pátio de ninguém.
+#
+# 20 veículos (6 suv, 5 hatch, 5 sedan, 4 utilitario), desenhados
+# para exercitar o motor de busca:
+#   - faixas de preço distintas (widen por preço, over_budget_fallback)
+#   - anos escalonados (widen por ano com step -2)
+#   - dois itens de preço próximo (corte por diversidade, min_gap_pct)
+#   - itens com e sem foto (album_scope)
+#   - marcas repetidas (fuzzy por nome/modelo)
+#
+# SCHEMA (todo veículo tem os mesmos campos, sem exceção):
+#   codigo, nome, marca, modelo, versao, categoria, ano, km, cambio,
+#   combustivel, cor, valor_brl, descricao, foto_url, fotos,
+#   opcionais, unico_dono, ipva_pago, laudo_cautelar, garantia_meses,
+#   aceita_troca
+#
+# PLACA NÃO ENTRA AQUI, de propósito: o redator do Presidio trata placa como
+# PII (`_PLATE_RE`) e a rule pii_v4 rejeitaria a bolha que citasse uma. Um
+# campo que o agente nunca pode falar é peso morto no payload.
+#
+# `aceita_troca: false` existe em dois veículos (HAT-005, UTL-004): são
+# repasse a preço fechado. Um campo que vale `true` em 20 de 20 linhas não é
+# dado, é política de loja — e política de loja mora no FAQ, não no catálogo.
+
+veiculos:
+  # ===== SUVs =====
+  - codigo: "SUV-001"
+    nome: "Jeep Compass Longitude 2022"
+    marca: "Jeep"
+    modelo: "Compass"
+    versao: "Longitude 1.3 T270"
+    categoria: "suv"
+    ano: 2022
+    km: 48000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "prata"
+    valor_brl: 132900
+    descricao: "SUV completo, único dono, revisões em concessionária."
+    opcionais: ["central multimídia", "câmera de ré", "sensor de estacionamento", "piloto automático", "rodas de liga 18"]
+    unico_dono: true
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/suv-001.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/suv-001-a.jpg"
+      - "https://exemplo.invalido/fixture/suv-001-b.jpg"
+
+  # Preço a 4% do SUV-001: exercita o corte por diversidade (min_gap_pct 0.15).
+  - codigo: "SUV-002"
+    nome: "Volkswagen T-Cross Comfortline 2022"
+    marca: "Volkswagen"
+    modelo: "T-Cross"
+    versao: "Comfortline 200 TSI"
+    categoria: "suv"
+    ano: 2022
+    km: 39500
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "branco"
+    valor_brl: 127500
+    descricao: "SUV compacto, porta-malas grande, ideal para família pequena."
+    opcionais: ["central multimídia", "câmera de ré", "controle de estabilidade", "faróis de LED"]
+    unico_dono: false
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/suv-002.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/suv-002-a.jpg"
+
+  - codigo: "SUV-003"
+    nome: "Hyundai Creta Action 2023"
+    marca: "Hyundai"
+    modelo: "Creta"
+    versao: "Action 1.0 TGDI"
+    categoria: "suv"
+    ano: 2023
+    km: 27000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "cinza"
+    valor_brl: 141900
+    descricao: "Seminovo com garantia de fábrica ainda vigente."
+    opcionais: ["central multimídia", "câmera de ré", "ar digital", "6 airbags"]
+    unico_dono: true
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/suv-003.jpg"
+    fotos: []
+
+  - codigo: "SUV-004"
+    nome: "Chevrolet Tracker Premier 2021"
+    marca: "Chevrolet"
+    modelo: "Tracker"
+    versao: "Premier 1.2 Turbo"
+    categoria: "suv"
+    ano: 2021
+    km: 62000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "preto"
+    valor_brl: 109900
+    descricao: "Versão topo de linha, pneus novos."
+    opcionais: ["teto solar", "bancos em couro", "central multimídia", "câmera de ré", "piloto automático"]
+    unico_dono: false
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/suv-004.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/suv-004-a.jpg"
+
+  - codigo: "SUV-005"
+    nome: "Renault Duster Iconic 2020"
+    marca: "Renault"
+    modelo: "Duster"
+    versao: "Iconic 1.6 CVT"
+    categoria: "suv"
+    ano: 2020
+    km: 78000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "marrom"
+    valor_brl: 87900
+    descricao: "SUV de entrada, robusto, bom para estrada de terra."
+    opcionais: ["central multimídia", "câmera de ré", "rack de teto", "sensor de estacionamento"]
+    unico_dono: false
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/suv-005.jpg"
+    fotos: []
+
+  - codigo: "SUV-006"
+    nome: "Toyota Corolla Cross XRE 2023"
+    marca: "Toyota"
+    modelo: "Corolla Cross"
+    versao: "XRE 2.0"
+    categoria: "suv"
+    ano: 2023
+    km: 22000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "branco"
+    valor_brl: 178900
+    descricao: "Topo da categoria, baixa quilometragem, manual e chave reserva."
+    opcionais: ["central multimídia", "câmera 360", "bancos em couro", "piloto adaptativo", "7 airbags"]
+    unico_dono: true
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/suv-006.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/suv-006-a.jpg"
+      - "https://exemplo.invalido/fixture/suv-006-b.jpg"
+
+  # ===== Hatchs =====
+  - codigo: "HAT-001"
+    nome: "Volkswagen Polo Highline 2021"
+    marca: "Volkswagen"
+    modelo: "Polo"
+    versao: "Highline 200 TSI"
+    categoria: "hatch"
+    ano: 2021
+    km: 54000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "vermelho"
+    valor_brl: 89900
+    descricao: "Hatch premium, econômico na cidade."
+    opcionais: ["digital cockpit", "central multimídia", "câmera de ré", "faróis de LED", "piloto automático"]
+    unico_dono: false
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/hat-001.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/hat-001-a.jpg"
+
+  - codigo: "HAT-002"
+    nome: "Hyundai HB20 Comfort 2022"
+    marca: "Hyundai"
+    modelo: "HB20"
+    versao: "Comfort 1.0"
+    categoria: "hatch"
+    ano: 2022
+    km: 41000
+    cambio: "manual"
+    combustivel: "flex"
+    cor: "prata"
+    valor_brl: 68900
+    descricao: "Primeiro carro, manutenção barata."
+    opcionais: ["ar-condicionado", "direção elétrica", "vidros elétricos", "central multimídia"]
+    unico_dono: true
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/hat-002.jpg"
+    fotos: []
+
+  - codigo: "HAT-003"
+    nome: "Chevrolet Onix LT 2021"
+    marca: "Chevrolet"
+    modelo: "Onix"
+    versao: "LT 1.0 Turbo"
+    categoria: "hatch"
+    ano: 2021
+    km: 59000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "branco"
+    valor_brl: 72900
+    descricao: "O hatch mais vendido do país, pronto para transferência."
+    opcionais: ["central multimídia", "câmera de ré", "wi-fi nativo", "6 airbags"]
+    unico_dono: false
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/hat-003.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/hat-003-a.jpg"
+
+  # Repasse a preço fechado: `aceita_troca: false` exercita o caminho em que
+  # o carro existe mas a negociação de troca não se aplica.
+  - codigo: "HAT-005"
+    nome: "Renault Sandero Zen 2019"
+    marca: "Renault"
+    modelo: "Sandero"
+    versao: "Zen 1.0"
+    categoria: "hatch"
+    ano: 2019
+    km: 92000
+    cambio: "manual"
+    combustivel: "flex"
+    cor: "azul"
+    valor_brl: 46900
+    descricao: "O mais em conta do pátio. Repasse a preço fechado."
+    opcionais: ["ar-condicionado", "direção hidráulica"]
+    unico_dono: false
+    ipva_pago: false
+    laudo_cautelar: "aprovado com apontamentos"
+    garantia_meses: 0
+    aceita_troca: false
+    foto_url: "https://exemplo.invalido/fixture/hat-005.jpg"
+    fotos: []
+
+  - codigo: "HAT-006"
+    nome: "Toyota Yaris XL Plus 2022"
+    marca: "Toyota"
+    modelo: "Yaris"
+    versao: "XL Plus 1.5"
+    categoria: "hatch"
+    ano: 2022
+    km: 35000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "prata"
+    valor_brl: 94900
+    descricao: "Hatch de baixa manutenção."
+    opcionais: ["7 airbags", "câmera de ré", "central multimídia", "controle de estabilidade"]
+    unico_dono: true
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/hat-006.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/hat-006-a.jpg"
+
+  # ===== Sedans =====
+  - codigo: "SED-001"
+    nome: "Toyota Corolla XEi 2022"
+    marca: "Toyota"
+    modelo: "Corolla"
+    versao: "XEi 2.0"
+    categoria: "sedan"
+    ano: 2022
+    km: 44000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "preto"
+    valor_brl: 149900
+    descricao: "Sedan referência de revenda, todas as revisões feitas."
+    opcionais: ["central multimídia", "câmera de ré", "piloto adaptativo", "7 airbags", "rodas de liga 17"]
+    unico_dono: true
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/sed-001.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/sed-001-a.jpg"
+      - "https://exemplo.invalido/fixture/sed-001-b.jpg"
+
+  - codigo: "SED-002"
+    nome: "Honda Civic EXL 2021"
+    marca: "Honda"
+    modelo: "Civic"
+    versao: "EXL 2.0 CVT"
+    categoria: "sedan"
+    ano: 2021
+    km: 57000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "cinza"
+    valor_brl: 138900
+    descricao: "Interior em couro, som premium."
+    opcionais: ["teto solar", "bancos em couro", "som premium", "câmera de ré", "piloto automático"]
+    unico_dono: false
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/sed-002.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/sed-002-a.jpg"
+
+  - codigo: "SED-003"
+    nome: "Volkswagen Virtus Comfortline 2022"
+    marca: "Volkswagen"
+    modelo: "Virtus"
+    versao: "Comfortline 200 TSI"
+    categoria: "sedan"
+    ano: 2022
+    km: 38000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "branco"
+    valor_brl: 106900
+    descricao: "Maior porta-malas da categoria, ótimo para aplicativo."
+    opcionais: ["central multimídia", "câmera de ré", "sensor de estacionamento", "faróis de LED"]
+    unico_dono: true
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/sed-003.jpg"
+    fotos: []
+
+  - codigo: "SED-004"
+    nome: "Chevrolet Onix Plus LTZ 2021"
+    marca: "Chevrolet"
+    modelo: "Onix Plus"
+    versao: "LTZ 1.0 Turbo"
+    categoria: "sedan"
+    ano: 2021
+    km: 63000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "prata"
+    valor_brl: 84900
+    descricao: "Sedan compacto econômico, multimídia com espelhamento."
+    opcionais: ["central multimídia", "câmera de ré", "wi-fi nativo", "piloto automático"]
+    unico_dono: false
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/sed-004.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/sed-004-a.jpg"
+
+  - codigo: "SED-005"
+    nome: "Hyundai HB20S Vision 2020"
+    marca: "Hyundai"
+    modelo: "HB20S"
+    versao: "Vision 1.6"
+    categoria: "sedan"
+    ano: 2020
+    km: 81000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "branco"
+    valor_brl: 66900
+    descricao: "Sedan de entrada, bem conservado, pneus com meia vida."
+    opcionais: ["ar-condicionado", "central multimídia", "câmera de ré"]
+    unico_dono: false
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/sed-005.jpg"
+    fotos: []
+
+  # ===== Utilitários =====
+  - codigo: "UTL-001"
+    nome: "Fiat Toro Freedom 2022"
+    marca: "Fiat"
+    modelo: "Toro"
+    versao: "Freedom 1.3 T270"
+    categoria: "utilitario"
+    ano: 2022
+    km: 51000
+    cambio: "automatico"
+    combustivel: "flex"
+    cor: "branco"
+    valor_brl: 139900
+    descricao: "Picape de uso misto, caçamba com capota marítima."
+    opcionais: ["capota marítima", "central multimídia", "câmera de ré", "estribos laterais"]
+    unico_dono: false
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/utl-001.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/utl-001-a.jpg"
+
+  - codigo: "UTL-002"
+    nome: "Toyota Hilux SR 2021"
+    marca: "Toyota"
+    modelo: "Hilux"
+    versao: "SR 2.8 4x4"
+    categoria: "utilitario"
+    ano: 2021
+    km: 96000
+    cambio: "automatico"
+    combustivel: "diesel"
+    cor: "prata"
+    valor_brl: 219900
+    descricao: "Picape 4x4 diesel, uso rural, revisões no prazo."
+    opcionais: ["tração 4x4", "protetor de caçamba", "central multimídia", "santo antônio"]
+    unico_dono: true
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/utl-002.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/utl-002-a.jpg"
+      - "https://exemplo.invalido/fixture/utl-002-b.jpg"
+
+  - codigo: "UTL-003"
+    nome: "Fiat Strada Endurance 2023"
+    marca: "Fiat"
+    modelo: "Strada"
+    versao: "Endurance 1.4 Cabine Dupla"
+    categoria: "utilitario"
+    ano: 2023
+    km: 29000
+    cambio: "manual"
+    combustivel: "flex"
+    cor: "branco"
+    valor_brl: 96900
+    descricao: "Picape compacta, a mais vendida do segmento, sem uso comercial."
+    opcionais: ["ar-condicionado", "central multimídia", "câmera de ré", "direção elétrica"]
+    unico_dono: true
+    ipva_pago: true
+    laudo_cautelar: "aprovado"
+    garantia_meses: 3
+    aceita_troca: true
+    foto_url: "https://exemplo.invalido/fixture/utl-003.jpg"
+    fotos: []
+
+  # Segundo repasse a preço fechado, no outro extremo do catálogo.
+  - codigo: "UTL-004"
+    nome: "Renault Kangoo Express 2019"
+    marca: "Renault"
+    modelo: "Kangoo"
+    versao: "Express 1.6"
+    categoria: "utilitario"
+    ano: 2019
+    km: 118000
+    cambio: "manual"
+    combustivel: "flex"
+    cor: "branco"
+    valor_brl: 52900
+    descricao: "Furgão de carga, ideal para entrega. Repasse a preço fechado."
+    opcionais: ["ar-condicionado", "porta lateral corrediça", "divisória de carga"]
+    unico_dono: false
+    ipva_pago: false
+    laudo_cautelar: "aprovado com apontamentos"
+    garantia_meses: 0
+    aceita_troca: false
+    foto_url: "https://exemplo.invalido/fixture/utl-004.jpg"
+    fotos: []
