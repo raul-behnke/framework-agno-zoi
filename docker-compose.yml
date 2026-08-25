@@ -22,8 +22,11 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
     healthcheck:
-      # O processo vivo é o sinal: sem porta, não há o que sondar.
-      test: ["CMD-SHELL", "pgrep -f 'python app.py' > /dev/null || exit 1"]
+      # Sem porta exposta, o sinal é o processo vivo. `pgrep` e `ps` NÃO
+      # existem na imagem slim — o healthcheck original nunca passaria, e o
+      # container ficaria eternamente "health: starting". /proc/1 resolve
+      # sem instalar nada.
+      test: ["CMD-SHELL", "test -d /proc/1 && grep -q python /proc/1/cmdline"]
       interval: 60s
       timeout: 5s
       retries: 3

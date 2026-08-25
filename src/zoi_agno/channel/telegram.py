@@ -210,9 +210,29 @@ class BotTelegram:
                 r = await self._chamar(
                     "getUpdates", offset=offset, timeout=self.cfg.timeout_polling_s
                 )
-            except Exception:  # noqa: BLE001 — rede cai; o laço não
+            except httpx.HTTPStatusError as exc:
                 self.stats.erros += 1
-                logger.warning("telegram.polling_falhou — tentando de novo em 3s")
+                # 409 = outro processo já consome getUpdates deste bot. É o
+                # erro mais comum ao subir uma segunda instância por engano,
+                # e o mais confuso sem esta mensagem: o bot "não responde"
+                # sem nenhum sintoma óbvio.
+                if exc.response.status_code == 409:
+                    logger.error(
+                        "telegram.conflito — outro processo já está consumindo este bot. "
+                        "Só um consumidor por token; verifique se há outra instância no ar."
+                    )
+                else:
+                    logger.warning(
+                        "telegram.polling_falhou http=%s — tentando de novo em 3s",
+                        exc.response.status_code,
+                    )
+                await asyncio.sleep(3.0)
+                continue
+            except Exception as exc:  # noqa: BLE001 — rede cai; o laço não
+                self.stats.erros += 1
+                logger.warning(
+                    "telegram.polling_falhou %s — tentando de novo em 3s", type(exc).__name__
+                )
                 await asyncio.sleep(3.0)
                 continue
             for update in r.get("result", []):

@@ -72,9 +72,16 @@ async def rodar(tenant_id: str, *, dados: Path, tenants_dir: Path) -> int:
     worker = WaitWorker(repo, {tenant_id: runtime})
 
     eu = await bot.quem_sou()
-    print(f"@{eu.get('username')} atendendo como {tenant.persona.get('name', tenant_id)}")
-    print(f"   routine: {tenant.routine.routine_name} · {len(tenant.routine.main.nodes)} nós")
-    print("   ctrl-c para parar")
+    # Tudo por logging, inclusive o banner: num container, `print` (stdout) e
+    # logging (stderr) se separam, e depurar "por que não aparece nada no log"
+    # custou mais que escrever isto certo.
+    logger.info(
+        "no ar: @%s atendendo como %s · routine %s · %d nós",
+        eu.get("username"),
+        tenant.persona.get("name", tenant_id),
+        tenant.routine.routine_name,
+        len(tenant.routine.main.nodes),
+    )
 
     parar = asyncio.Event()
     laco = asyncio.get_running_loop()
@@ -94,15 +101,15 @@ async def rodar(tenant_id: str, *, dados: Path, tenants_dir: Path) -> int:
     tarefas = [asyncio.create_task(bot.rodar()), asyncio.create_task(acordar_esperas())]
     await parar.wait()
 
-    print("\nparando…")
+    logger.info("parando…")
     bot.parar()
     for t in tarefas:
         t.cancel()
     await bot.fechar()
     s = bot.stats
-    print(
-        f"   {s.turnos} turnos · {s.bolhas} bolhas · {len(s.chats)} conversas · "
-        f"{s.handoffs} handoffs · {s.erros} erros"
+    logger.info(
+        "parado: %d turnos · %d bolhas · %d conversas · %d handoffs · %d erros",
+        s.turnos, s.bolhas, len(s.chats), s.handoffs, s.erros,
     )
     return 0
 
@@ -116,7 +123,8 @@ def main() -> int:
     args = ap.parse_args()
 
     logging.basicConfig(
-        level=logging.INFO if args.verbose else logging.WARNING,
+        # INFO por padrão: serviço mudo é indistinguível de serviço morto.
+        level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     carregar_env(Path(__file__).parent / ".env")
