@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** Fase 4 quase fechada. Pipeline como Workflow do Agno, cinco cérebros, prompts do v4 portados e **dois tenants de produção rodando de ponta a ponta** sobre fixtures offline. Falta o gate contra os goldens.
+> **Estado:** Fase 4 fechada. Pipeline como Workflow do Agno, cinco cérebros, prompts do v4 portados, tenants de produção offline e **os 12 goldens do sal_imports rodando contra o runtime novo**.
 
 ## A ideia central
 
@@ -57,6 +57,7 @@ Um step-função que declara `run_context` recebe o `session_state` vivo; a escr
 | `prompts.py` | Hierarquia de instrução, âncora temporal, grounding por papel |
 | `tools/` | Motor de catálogo declarativo + agenda + registro por `config.yaml` |
 | `builder.py` | `Tenant → agno.Workflow` + `WorkflowRuntime` |
+| `eval/` | Replay de goldens — o instrumento do gate |
 
 **Regra dura:** nada em `zoi_agno/` conhece o nome de um tenant. Vertical nova é pasta nova em `tenants/`, zero linha de Python.
 
@@ -248,3 +249,28 @@ Coisas que instrução de prompt não segurou de forma estável, nem aqui nem no
 **Manifesto de slots.** O extrator vê *todos* os slots do fluxo, com marca no que está sendo perguntado agora. O lead responde na ordem dele: `"sou o Marcos de Bangu, consigo falar sim"` grava três slots num turno, mesmo que o nó ativo pergunte só um. Sem isso o agente reperguntava o nome nos dois turnos seguintes — contra a instrução explícita da persona.
 
 **Sinal derivado de escolha.** Num `freetalk` com slots declarados, gravar um deles *é* a escolha. O extrator emite o `set_slot` e esquece o `signal` com frequência; quando isso acontece o `decide` seguinte não tem o que consumir. A derivação é conservadora: só age quando o turno gravou um slot **do nó** e não emitiu sinal nenhum. Sinal do extrator sempre vence.
+
+## O gate
+
+```bash
+uv run python -c "from zoi_agno.eval.goldens import cli; cli('sal_imports')"
+```
+
+Reproduz os goldens do tenant — as mesmas listas de falas do lead que o v4 usa — e afere propriedades verificáveis por código, não estilo:
+
+- nada citado pelo agente foi inventado
+- o agente não revelou o próprio mecanismo
+- nenhuma frase proibida da persona
+- onde a conversa parou, e o que coletou
+
+Resultado do `sal_imports` (12 goldens, `gpt-5.4-mini`, catálogo fixture):
+
+```
+  12/12 sem violação · 2/12 chegaram a um end
+```
+
+As três suítes adversariais completas — `red_team` (parcela, CNH, autonomia garantida) e `prompt_injection` (revelar prompt, inventar modelo, forçar cotação) — passaram limpas.
+
+O `2/12` não é falha: os goldens têm listas de falas de tamanho fixo, e a maioria acaba antes de a conversa fechar. As suítes adversariais são sondas de 3 a 4 turnos que nunca deveriam terminar num `end`.
+
+**O que este gate ainda não faz:** medir aderência de processo. Os goldens não declaram o desfecho esperado, e o v4 pontua isso com um juiz LLM que ainda não foi portado. Comparar os dois runtimes lado a lado exige, além disso, subir o ambiente do v4 — Postgres, LangGraph e o resto.

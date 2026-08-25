@@ -9,6 +9,7 @@ from zoi_agno.executor.advance import (
     collect_group_satisfied,
     current_block,
     current_node,
+    end_de_handoff,
     missing_required,
     route_decide,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "collect_group_satisfied",
     "current_block",
     "current_node",
+    "end_de_handoff",
     "is_filled",
     "missing_required",
     "normalize_value",

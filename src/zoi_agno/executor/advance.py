@@ -358,6 +358,30 @@ def advance(routine: RoutineAst, state: dict[str, Any], *, max_hops: int = 32) -
     return resultado
 
 
+def end_de_handoff(routine: RoutineAst, state: dict[str, Any]) -> str | None:
+    """O ``end`` para onde uma escalada deve pousar.
+
+    Preferência: ``role: handoff`` → ``role: nurture`` → nenhum.
+
+    Um ``handoff_human`` aceito encerra a conversa do ponto de vista do
+    agente, mas sem mover o cursor o fluxo fica parado no nó de coleta: o
+    canal marca escalada e o runtime acha que ainda está perguntando o nome.
+
+    O v4 resolve isso por palavra-chave no id e no motivo do End, e o próprio
+    comentário registra que a heurística é frágil — o adapter de BPMN colapsa
+    todos os ``outcome: handed_off`` no mesmo motivo, então só o id distingue
+    o End de sucesso do de nutrição. No RoutineAst o ``role`` é declarado, e
+    a escolha deixa de ser adivinhação.
+    """
+    bloco = current_block(routine, state)
+    ends = [(nid, n) for nid, n in bloco.nodes.items() if isinstance(n, EndNode)]
+    for papel in ("handoff", "nurture"):
+        for nid, n in ends:
+            if n.role == papel:
+                return nid
+    return None
+
+
 def _move(
     state: dict[str, Any],
     destino: str | None,

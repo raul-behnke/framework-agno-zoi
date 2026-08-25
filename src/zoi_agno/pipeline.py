@@ -24,7 +24,7 @@ from zoi_agno.brains import composer, critic, extractor, planner, tone
 from zoi_agno.contracts import Command, CommandGenOutput
 from zoi_agno.enforcement import default_rules
 from zoi_agno.enforcement.dispatcher_v4 import DispatcherV4
-from zoi_agno.executor import advance, current_node
+from zoi_agno.executor import advance, current_node, end_de_handoff
 from zoi_agno.guards import checar_frases_proibidas, checar_grounding
 from zoi_agno.state import reset_turn
 from zoi_agno.tenants import Tenant
@@ -152,6 +152,8 @@ class Pipeline:
         aceitos, rejeicoes = await self.dispatcher.dispatch(comandos, state, self._ctx(state))
         handoff = self._aplicar(state, aceitos)
         self._derivar_sinal_de_escolha(state, aceitos)
+        if handoff:
+            self._rotear_para_escalada(state)
         resultado = await self._avancar_executando_tools(state)
         node = current_node(self.routine, state)
         prompt = composer.montar_entrada(
@@ -290,6 +292,24 @@ class Pipeline:
             0 if houve_set else int(state.get("_turns_since_set_slot", 0)) + 1
         )
         return handoff
+
+    def _rotear_para_escalada(self, state: dict[str, Any]) -> None:
+        """Escalada aceita move o cursor para o End de handoff.
+
+        Sem isso o canal marca a conversa como escalada e o runtime continua
+        achando que está no meio de uma coleta — no próximo turno o agente
+        volta a perguntar, depois de já ter dito que ia encaminhar.
+        """
+        destino = end_de_handoff(self.routine, state)
+        if destino is None:
+            logger.warning(
+                "pipeline.sem_end_de_handoff tenant=%s — o roteiro não declara "
+                "end com role handoff nem nurture",
+                self.tenant.tenant_id,
+            )
+            return
+        state["current_node"] = destino
+        state["turns_in_node"] = 0
 
     def _derivar_sinal_de_escolha(self, state: dict[str, Any], aceitos: list[Command]) -> None:
         """Escolha registrada sem sinal vira sinal de escolha.
