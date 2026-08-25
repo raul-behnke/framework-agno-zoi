@@ -19,6 +19,19 @@ import signal
 import sys
 from pathlib import Path
 
+# ATENÇÃO À ORDEM: o logging é configurado aqui, ANTES de importar agno e
+# litellm. Essas bibliotecas mexem na configuração global no momento do
+# import — chegar depois delas é uma corrida que a gente perde, e o sintoma é
+# um serviço que sobe e não loga nada.
+logging.basicConfig(
+    level=os.getenv("ZOI_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    stream=sys.stderr,
+    force=True,
+)
+for ruidoso in ("LiteLLM", "litellm", "httpx", "httpcore", "openai"):
+    logging.getLogger(ruidoso).setLevel(logging.WARNING)
+
 from agno.db.sqlite import SqliteDb
 
 from zoi_agno.builder import WorkflowRuntime
@@ -43,6 +56,9 @@ def carregar_env(caminho: Path) -> None:
 
 
 async def rodar(tenant_id: str, *, dados: Path, tenants_dir: Path) -> int:
+    # Primeira linha do log: prova de vida antes de qualquer trabalho pesado.
+    # Sem ela, "subiu e está lento" e "subiu e travou" são indistinguíveis.
+    logger.info("subindo tenant=%s", tenant_id)
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         print("falta TELEGRAM_BOT_TOKEN no ambiente", file=sys.stderr)
@@ -109,7 +125,11 @@ async def rodar(tenant_id: str, *, dados: Path, tenants_dir: Path) -> int:
     s = bot.stats
     logger.info(
         "parado: %d turnos · %d bolhas · %d conversas · %d handoffs · %d erros",
-        s.turnos, s.bolhas, len(s.chats), s.handoffs, s.erros,
+        s.turnos,
+        s.bolhas,
+        len(s.chats),
+        s.handoffs,
+        s.erros,
     )
     return 0
 
@@ -122,21 +142,8 @@ def main() -> int:
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
-    logging.basicConfig(
-        # INFO por padrão: serviço mudo é indistinguível de serviço morto.
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        # force=True é o que faz esta chamada valer. agno e litellm configuram
-        # o logging no momento do IMPORT, e os imports rodam antes daqui —
-        # sem force, basicConfig é no-op e o root fica no nível deles. O
-        # sintoma: WARNING aparecia e INFO não, então o banner de subida
-        # sumia e o serviço parecia morto.
-        force=True,
-    )
-    # litellm loga cada chamada em INFO; num bot com 5 cérebros por turno
-    # isso enterra o que importa.
-    logging.getLogger("LiteLLM").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
     carregar_env(Path(__file__).parent / ".env")
     return asyncio.run(rodar(args.tenant, dados=args.dados, tenants_dir=args.tenants))
 
