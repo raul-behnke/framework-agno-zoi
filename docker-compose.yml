@@ -32,5 +32,30 @@ services:
       retries: 3
       start_period: 30s
 
+  veiculos:
+    build: .
+    image: zoi-agno:latest
+    container_name: zoi_agno_veiculos
+    command: ["zoi_veiculos"]
+    restart: unless-stopped
+    env_file: .env
+    # Um consumidor por token: cada bot precisa do SEU. `app.py` lê sempre
+    # `TELEGRAM_BOT_TOKEN`, então o token deste tenant entra por override do
+    # nome da variável — sem tocar o código.
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN_VEICULOS}
+    volumes:
+      - dados_veiculos:/app/.dados
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    healthcheck:
+      test: ["CMD-SHELL", "test -d /proc/1 && grep -q python /proc/1/cmdline"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
 volumes:
   dados_barbearia:
+  dados_veiculos:
