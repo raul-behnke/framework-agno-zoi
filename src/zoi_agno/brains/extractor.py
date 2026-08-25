@@ -40,8 +40,12 @@ INSTRUCOES = [
         "uma — é normal e desejável extrair 3 ou 4 slots num turno."
     ),
     (
-        "Se o lead fez uma PERGUNTA, isso não é resposta: não vire set_slot. "
-        "Se precisar, emita clarify."
+        "Uma PERGUNTA não é resposta à pergunta que o agente fez: não invente "
+        "set_slot a partir dela. Mas o que o lead AFIRMA dentro de uma pergunta "
+        "continua sendo dado. 'vi uma Tracker, ainda tem?' afirma que o "
+        "interesse dele é a Tracker; 'tenho uma Ecosport 2012, aceitam?' afirma "
+        "o veículo de troca. Extraia a afirmação e ignore a interrogação. Só "
+        "emita clarify quando não houver nenhuma afirmação para extrair."
     ),
     (
         "Se o lead pediu para falar com uma pessoa, emita handoff_human — sempre, "

@@ -27,7 +27,6 @@ DEFAULT_AGENT_ALLOWED_KINDS: dict[str, set[str]] = {
         "replan",
         "say_freetalk",
         "signal",
-        "consult_faq",
         "record_fact",
         "annotate_interaction",
         "handoff_human",

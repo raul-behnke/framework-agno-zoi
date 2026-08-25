@@ -78,7 +78,6 @@ CommandKind = Literal[
     "clarify",
     "replan",
     "handoff_human",
-    "consult_faq",
     "say_freetalk",
     "signal",
     "finish_flow",
@@ -137,10 +136,6 @@ class ReplanPayload(BaseModel):
 class HandoffHumanPayload(BaseModel):
     reason: str = Field(min_length=1, max_length=200)
     urgency: Literal["low", "med", "high"] = "med"
-
-
-class ConsultFAQPayload(BaseModel):
-    query: str = Field(min_length=1, max_length=400)
 
 
 class SayFreetalkPayload(BaseModel):
@@ -220,11 +215,6 @@ class HandoffHumanCommand(_CmdBase):
     payload: HandoffHumanPayload
 
 
-class ConsultFAQCommand(_CmdBase):
-    kind: Literal["consult_faq"]
-    payload: ConsultFAQPayload
-
-
 class SayFreetalkCommand(_CmdBase):
     kind: Literal["say_freetalk"]
     payload: SayFreetalkPayload
@@ -264,7 +254,6 @@ _AnyCommand = Annotated[
     | ClarifyCommand
     | ReplanCommand
     | HandoffHumanCommand
-    | ConsultFAQCommand
     | SayFreetalkCommand
     | SignalCommand
     | FinishFlowCommand

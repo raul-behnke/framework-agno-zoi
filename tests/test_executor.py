@@ -301,6 +301,37 @@ def test_ciclo_intra_turno_devolve_a_palavra_ao_lead() -> None:
     assert r.finished is False
 
 
+def test_decide_nunca_e_o_lugar_de_descanso_do_cursor() -> None:
+    """Guard que barra e devolve para o nó de origem não pode parar no decide.
+
+    Caso real (zoi_veiculos, 2026-08-25): o extrator emitiu o sinal de escolha
+    sem o ``set_slot`` do item. O guard barrou, o ``else`` apontou para o
+    freetalk já visitado neste passo, e o cursor parava EM CIMA do decide — um
+    nó sem pergunta e sem escopo. O redator caía na tarefa genérica e
+    improvisava a pergunta da etapa seguinte, lendo o plano.
+
+    O cursor tem que descansar no destino, que é um nó de verdade.
+    """
+    routine = parse_routine(
+        "routine_name: t_guard\nversion: 1\nslots:\n  escolhido: { type: string }\n"
+        "main:\n  start: ft_um\n  nodes:\n"
+        "    ft_um:\n      type: freetalk\n"
+        '      goal: "ofereça"\n      scope: "oferta"\n'
+        "      signals: [escolheu]\n      max_turns: 4\n"
+        "      exit_on_timeout: e_fim\n      next: d_guard\n"
+        "    d_guard:\n      type: decide\n      branches:\n"
+        "        - { on_field: escolhido, next: e_fim }\n      else: ft_um\n"
+        '    e_fim:\n      type: end\n      role: success\n      farewell: "fim"\n'
+    )
+    st = new_session_state(thread_id="x", tenant_id="t", contact_id="1", start_node="ft_um")
+    st["last_signal"] = "escolheu"
+    r = advance(routine, st)
+
+    assert r.node_id == "ft_um", f"parou em {r.node_id!r} — decide não é lugar de descanso"
+    assert st["current_node"] == "ft_um"
+    assert r.finished is False
+
+
 def test_max_hops_e_a_rede_de_ultima_instancia() -> None:
     """A trava de ciclo pega o caso comum; ``max_hops`` cobre o resto.
 

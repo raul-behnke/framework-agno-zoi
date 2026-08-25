@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from agno.agent import Agent
-from zoi_routine.ast import CollectGroupNode, CollectNode, EndNode, FreeTalkNode
+from zoi_routine.ast import CollectGroupNode, CollectNode, DecideNode, EndNode, FreeTalkNode
 
 from zoi_agno.gateway import modelo_para
 from zoi_agno.prompts import (
@@ -210,5 +210,18 @@ def _tarefa(node: Any, routine: Any, state: dict[str, Any]) -> str:
         if node.farewell:
             return f"TAREFA: despeça-se. Base: {node.farewell!r}"
         return "TAREFA: encerre a conversa com cordialidade."
+
+    # O cursor não deveria descansar num decide (ver `advance._estacionar`),
+    # mas se descansar, a tarefa genérica é perigosa: sem pergunta e sem
+    # escopo, o redator lê o plano e improvisa a pergunta do nó que ele ACHA
+    # que vem a seguir — inclusive pedindo dado de uma etapa que a conversa
+    # ainda não alcançou.
+    if isinstance(node, DecideNode):
+        return (
+            "TAREFA: o fluxo não conseguiu avançar — falta alguma coisa que o "
+            "lead ainda não disse com clareza. Retome o ponto anterior da "
+            "conversa e peça a confirmação que falta, com as suas palavras. "
+            "NÃO puxe assunto novo e NÃO peça dado de uma etapa seguinte."
+        )
 
     return "TAREFA: responda ao lead de forma natural e avance a conversa."

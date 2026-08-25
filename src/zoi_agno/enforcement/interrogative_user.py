@@ -152,6 +152,44 @@ def _strip_terminal_tag(folded_msg: str) -> str:
     return folded_msg
 
 
+def _abre_interrogativa(folded: str) -> bool:
+    """True quando o trecho COMEÇA com um padrão interrogativo."""
+    for opener in _INTERROGATIVE_OPENERS:
+        if folded == opener or folded.startswith(opener + " ") or folded.startswith(opener + "?"):
+            return True
+    return False
+
+
+def _tem_afirmacao_antes_da_pergunta(user_msg: str) -> bool:
+    """True quando a mensagem AFIRMA alguma coisa e só depois pergunta.
+
+    A regra original olha a mensagem inteira: se termina em "?", nada dela
+    vira slot. Isso mata o padrão mais comum de lead real, que responde e
+    pergunta na mesma tacada:
+
+        "Tenho uma Ecosport 2012
+         Aceitam?"
+
+    O lead RESPONDEU que tem carro na troca. A pergunta é sobre outra coisa.
+    Sem esta porta, o `set_slot` é descartado, o nó não avança e o agente
+    repete a pergunta que acabou de ser respondida — foi exatamente o que
+    aconteceu na sessão de 2026-08-25.
+
+    Conservador de propósito: exige que a pergunta esteja no ÚLTIMO trecho e
+    que algum trecho ANTERIOR seja declarativo. "tem algum outro?" continua
+    barrado (um trecho só), e "quais modelos voces tem, no geral?" também
+    (o primeiro trecho já abre interrogativo).
+    """
+    partes = [_fold(p) for p in re.split(r"[\n,;.!]+", user_msg)]
+    partes = [p for p in partes if p]
+    if len(partes) < 2:
+        return False
+    ultima = partes[-1]
+    if not (ultima.endswith("?") or _abre_interrogativa(ultima)):
+        return False
+    return any(not p.endswith("?") and not _abre_interrogativa(p) for p in partes[:-1])
+
+
 def _is_interrogative(user_msg: str) -> bool:
     """Return True when the message appears to be a question."""
     if not user_msg:
@@ -224,6 +262,9 @@ class InterrogativeUserMsgRule:
         if not isinstance(user_msg, str):
             return None
         if not _is_interrogative(user_msg):
+            return None
+        # Respondeu E perguntou na mesma mensagem: a resposta é legítima.
+        if _tem_afirmacao_antes_da_pergunta(user_msg):
             return None
 
         prompt = (node_def.get("prompt") or "").strip()

@@ -285,6 +285,22 @@ def advance(routine: RoutineAst, state: dict[str, Any], *, max_hops: int = 32) -
             # O sinal é consumido pela decisão que ele destrancou.
             state["last_signal"] = None
             if not _move(state, destino, resultado, visitados):
+                # Ciclo intra-turno num decide. O cursor NÃO pode descansar
+                # aqui: um decide não tem pergunta nem escopo, o redator cai na
+                # tarefa genérica e improvisa a pergunta do nó que ele ACHA que
+                # vem a seguir, lendo o plano.
+                #
+                # Caso real (zoi_veiculos, 2026-08-25): o extrator emitiu
+                # `escolheu` sem o `set_slot` do veículo. `d_escolha_valida`
+                # barrou e mandou de volta para `ft_apresenta`, já visitado
+                # neste passo → cursor parou no decide → o agente perguntou
+                # "vai ter troca nessa compra?", pergunta de um nó onde nunca
+                # esteve, e no turno seguinte reapresentou o estoque.
+                #
+                # Parar NO DESTINO é sempre melhor: ele é um nó de verdade, com
+                # tarefa de verdade. O próximo turno reavalia este decide com o
+                # estado que o lead tiver mudado.
+                _estacionar(state, destino, resultado)
                 break
             continue
 
@@ -416,6 +432,22 @@ def _move(
     state["turns_in_node"] = 0
     resultado.moved = True
     return True
+
+
+def _estacionar(state: dict[str, Any], destino: str, resultado: AdvanceResult) -> None:
+    """Move o cursor SEM verificar ciclo, e devolve a palavra ao lead.
+
+    Só para o caso do decide em ciclo intra-turno: parar no destino é seguro
+    porque o laço termina em seguida (``break``), então não há como girar.
+    """
+    state["current_node"] = destino
+    state["turns_in_node"] = 0
+    resultado.moved = True
+    resultado.reason = (
+        f"ciclo intra-turno num decide: estacionado em {destino!r} — "
+        "um decide não é lugar de descanso do cursor"
+    )
+    logger.info("executor.decide_em_ciclo estacionou_em=%s", destino)
 
 
 def _pop_subflow(state: dict[str, Any], resultado: AdvanceResult) -> None:

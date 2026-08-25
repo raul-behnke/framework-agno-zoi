@@ -72,7 +72,6 @@ _HARD_FAIL_KINDS = {
     "replan",
     "skip_collect",
     "clarify",
-    "consult_faq",
 }
 _NEVER_KINDS = {"handoff_human", "finish_flow"}
 

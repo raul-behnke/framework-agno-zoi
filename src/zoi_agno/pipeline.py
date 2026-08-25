@@ -289,6 +289,20 @@ class Pipeline:
                 state["_skip_collect_count"] = int(state.get("_skip_collect_count", 0)) + 1
                 state.setdefault("skipped_nodes", []).append(cmd.payload.node_id)
 
+        # Turno estéril: o lead falou e NADA virou estado. É invisível hoje —
+        # nem log, nem rejeição, porque não houve rejeição nenhuma: o extrator
+        # simplesmente não emitiu comando que mude estado. Do lado de fora
+        # parece que o agente ignorou a mensagem, e depurar isso exigiu abrir
+        # o SQLite. Uma linha aqui responde "por que ele repetiu a pergunta?"
+        # sem sair do log.
+        if not houve_set and not any(c.kind in ("signal", "handoff_human") for c in aceitos):
+            logger.info(
+                "pipeline.turno_esteril node=%s kinds=%s msg=%r",
+                state.get("current_node"),
+                [c.kind for c in aceitos] or "nenhum",
+                str(state.get("_last_user_msg", ""))[:80],
+            )
+
         # O contador de skip zera em qualquer outro comando aceito — é o que
         # distingue lead esquivo de drift do extrator.
         if any(c.kind != "skip_collect" for c in aceitos):

@@ -109,6 +109,49 @@ async def test_pergunta_do_lead_vira_clarify_em_vez_de_resposta(estado) -> None:
     assert r.transform is not None and r.transform.to_kind == "clarify"
 
 
+async def test_lead_que_responde_e_pergunta_na_mesma_mensagem_passa(estado) -> None:
+    """Sessão zoi_veiculos 2026-08-25: o lead respondeu e perguntou junto.
+
+    "Tenho uma Ecosport 2012 / Aceitam?" É resposta à pergunta da troca E uma
+    pergunta sobre outra coisa. Antes desta porta o set_slot era descartado,
+    o nó não avançava e o agente repetia "você tem carro na troca?" — para o
+    lead, o agente tinha ignorado o que ele acabou de dizer.
+    """
+    estado["_last_user_msg"] = "Tenho uma Ecosport 2012\nAceitam?"
+    c = ctx(
+        current_node_def={
+            "id": "c_troca",
+            "kind": "collect",
+            "field": "possui_troca",
+            "validator": "sim_nao",
+        }
+    )
+    assert (
+        await InterrogativeUserMsgRule().check(
+            cmd("set_slot", {"slot": "possui_troca", "value": "sim"}), estado, c
+        )
+        is None
+    )
+
+
+async def test_pergunta_pura_com_virgula_continua_barrada(estado) -> None:
+    """A porta acima não pode virar bypass geral: um trecho interrogativo
+    antes da vírgula NÃO habilita a passagem."""
+    estado["_last_user_msg"] = "quais modelos vocês tem, no geral?"
+    c = ctx(
+        current_node_def={
+            "id": "c_um",
+            "kind": "collect",
+            "field": "servico",
+            "validator": "sim_nao",
+        }
+    )
+    r = await InterrogativeUserMsgRule().check(
+        cmd("set_slot", {"slot": "servico", "value": "sim"}), estado, c
+    )
+    assert r is not None
+
+
 async def test_afirmacao_do_lead_passa_normalmente(estado) -> None:
     estado["_last_user_msg"] = "sim, pode seguir"
     c = ctx(

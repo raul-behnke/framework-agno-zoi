@@ -29,7 +29,11 @@ slots:
     description: "Tipo de veículo procurado. qualquer = está aberto."
   veiculo_interesse:
     type: string
-    description: "Modelo ou marca que ele citou, se citou. Texto livre."
+    description: |
+      Modelo ou marca que ele citou, se citou. Texto livre.
+      Modelo citado DENTRO de uma pergunta também conta: "vi uma Tracker,
+      ainda tem?" preenche este slot com "Tracker". A pergunta é sobre
+      disponibilidade; o interesse já foi declarado.
   orcamento:
     type: string
     description: "Faixa de investimento, como ele falou ('uns 90 mil', 'até 120k')."
@@ -105,10 +109,16 @@ main:
       max_turns: 4
       on_max_turns: t_busca
       fields:
+        # SEM SAUDAÇÃO NA QUESTION. `composer._tarefa` reemite a question de
+        # TODO campo pendente a cada turno enquanto o grupo não fecha — uma
+        # saudação aqui volta ao redator toda vez, e ele se reapresenta.
+        # Aconteceu em 2026-08-25: o lead mandou uma segunda mensagem, nada foi
+        # extraído dela, e o agente respondeu "Olá! Aqui é o Léo, da Revenda
+        # ZOI" pela segunda vez. Quem cumprimenta é a persona, nos few-shots.
         - name: categoria_interesse
           cluster: identificacao
           required: true
-          question: "opa! aqui é o Léo, da Revenda ZOI. vi que você se interessou por um carro nosso — qual era?"
+          question: "vi que você se interessou por um carro nosso — qual era?"
         - name: veiculo_interesse
           cluster: identificacao
           required: false

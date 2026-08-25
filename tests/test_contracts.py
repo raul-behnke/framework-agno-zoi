@@ -16,7 +16,6 @@ KINDS_ESPERADOS = {
     "clarify",
     "replan",
     "handoff_human",
-    "consult_faq",
     "say_freetalk",
     "signal",
     "finish_flow",
@@ -26,16 +25,23 @@ KINDS_ESPERADOS = {
 }
 
 
-def test_sao_exatamente_quinze_kinds() -> None:
+def test_sao_exatamente_quatorze_kinds() -> None:
     """Guarda de contagem: um kind novo exige tocar 5 construtos em lockstep.
 
     Portado do v4 de propósito — os goldens comparam os dois runtimes, então
     o vocabulário tem que ser idêntico dos dois lados.
+
+    DIVERGÊNCIA DELIBERADA do v4: ``consult_faq`` não existe aqui. O v4 tem
+    RAG para atender esse comando; este runtime não populou ``_faq_chunks``
+    em lugar nenhum, então o kind era aceito pelas rules e descartado em
+    silêncio por ``pipeline._aplicar`` — um comando que o extrator adorava
+    emitir e que queimava o turno inteiro sem mudar estado. Removido do
+    vocabulário: o que o modelo não pode emitir, ele não emite.
     """
     from typing import get_args
 
     assert set(get_args(CommandKind)) == KINDS_ESPERADOS
-    assert len(KINDS_ESPERADOS) == 15
+    assert len(KINDS_ESPERADOS) == 14
 
 
 def test_uniao_discriminada_escolhe_o_payload_certo() -> None:
@@ -141,7 +147,6 @@ def test_todo_kind_tem_um_exemplo_valido(kind: str) -> None:
             "reason": "lead pulou etapa",
         },
         "handoff_human": {"reason": "pediu vendedor"},
-        "consult_faq": {"query": "tem garantia?"},
         "say_freetalk": {"text": "claro, posso ajudar"},
         "signal": {"name": "escolheu", "value": True},
         "finish_flow": {"outcome": "completed"},
