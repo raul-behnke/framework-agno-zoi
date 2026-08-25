@@ -1,0 +1,33 @@
+# Um serviço por bot. Vertical nova = mais um bloco aqui, com o token dela.
+#
+# Sem porta exposta: o canal é long polling, então o container só faz chamadas
+# de saída. Nada de nginx, nada de firewall novo.
+#
+# Estado em SQLite num volume. A decisão original do plano era Postgres
+# próprio; a caixa já roda 8 containers (4 deles Postgres) com ~1,4 GB
+# livres, e um quinto banco para um bot de demonstração não se paga. Trocar
+# depois é uma linha em app.py — `PostgresDb(db_url=...)`.
+
+services:
+  barbearia:
+    build: .
+    image: zoi-agno:latest
+    container_name: zoi_agno_barbearia
+    command: ["zoi_barbearia"]
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - dados_barbearia:/app/.dados
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    healthcheck:
+      # O processo vivo é o sinal: sem porta, não há o que sondar.
+      test: ["CMD-SHELL", "pgrep -f 'python app.py' > /dev/null || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  dados_barbearia:
