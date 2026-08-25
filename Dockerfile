@@ -11,9 +11,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
+# Sem UV_COMPILE_BYTECODE: compilar 6983 arquivos custava 50s de build e
+# engordava a camada, para economizar milissegundos num processo que sobe uma
+# vez e fica de pé. Troca ruim numa VPS compartilhada.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
 WORKDIR /app
