@@ -1,0 +1,370 @@
+# Catálogo de imóveis — fonte estruturada do tool property_search.
+# Schema: zoi_agent.tools.property.Imovel.
+# Atualize quando portfólio mudar.
+
+imoveis:
+  # ===== Apartamentos =====
+  - id: apto-centro-cwb-2q
+    codigo: "AP-001"
+    tipo: "apartamento"
+    nome: "Apartamento 2 quartos no Centro de Curitiba"
+    bairro: "Centro"
+    cidade: "Curitiba/PR"
+    valor_brl: 480000
+    area_m2: 68
+    quartos: 2
+    suites: 1
+    vagas: 1
+    sacada: true
+    vista: "urbana"
+    lazer_condominio: false
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["morar", "investir"]
+    tags: ["apto", "compacto", "centro", "comercio_proximo", "transporte_publico"]
+    descricao: "68m², 2 quartos com suíte, sacada urbana, próximo a comércio e transporte. Edifício consolidado, baixa taxa de condomínio."
+
+  - id: apto-batel-cwb-3q-lazer
+    codigo: "AP-002"
+    tipo: "apartamento"
+    nome: "Apartamento 3 quartos no Batel com lazer completo"
+    bairro: "Batel"
+    cidade: "Curitiba/PR"
+    valor_brl: 920000
+    area_m2: 110
+    quartos: 3
+    suites: 1
+    vagas: 2
+    sacada: true
+    vista: "parque"
+    lazer_condominio: true
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["morar"]
+    tags: ["apto", "alto_padrao", "batel", "lazer", "vista_parque", "familiar"]
+    descricao: "110m², 3 quartos (1 suíte), 2 vagas, sacada com vista para parque. Condomínio com piscina, academia, salão e playground. Pronto pra morar."
+
+  - id: apto-cabral-cwb-1q-invest
+    codigo: "AP-003"
+    tipo: "apartamento"
+    nome: "Studio Cabral para investimento"
+    bairro: "Cabral"
+    cidade: "Curitiba/PR"
+    valor_brl: 285000
+    area_m2: 35
+    quartos: 1
+    suites: 0
+    vagas: 1
+    sacada: false
+    vista: "urbana"
+    lazer_condominio: true
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["investir"]
+    tags: ["studio", "apto", "compacto", "investimento", "aluguel", "cabral", "universidade_proxima"]
+    descricao: "Studio 35m², ticket de entrada baixo, alta liquidez para aluguel residencial ou temporada. Próximo a universidade — locação garantida durante período letivo."
+
+  - id: apto-jardim-botanico-cwb-2q
+    codigo: "AP-004"
+    tipo: "apartamento"
+    nome: "Apartamento 2 quartos Jardim Botânico"
+    bairro: "Jardim Botânico"
+    cidade: "Curitiba/PR"
+    valor_brl: 620000
+    area_m2: 75
+    quartos: 2
+    suites: 1
+    vagas: 1
+    sacada: true
+    vista: "parque"
+    lazer_condominio: true
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["morar", "investir"]
+    tags: ["apto", "jardim_botanico", "parque_proximo", "familiar", "lazer"]
+    descricao: "75m², 2 quartos com suíte, sacada com vista parcial pro parque. Condomínio compacto com lazer essencial. Bairro arborizado e seguro."
+
+  # ===== Casas =====
+  - id: casa-pinhais-3q
+    codigo: "CA-001"
+    tipo: "casa"
+    nome: "Casa 3 quartos em Pinhais com quintal"
+    bairro: "Vila Amélia"
+    cidade: "Pinhais/PR"
+    valor_brl: 510000
+    area_m2: 130
+    quartos: 3
+    suites: 1
+    vagas: 2
+    sacada: false
+    vista: "rua"
+    lazer_condominio: false
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["morar"]
+    tags: ["casa", "familiar", "pinhais", "quintal", "garagem_coberta"]
+    descricao: "130m² construídos em terreno de 200m². 3 quartos, 1 suíte, garagem coberta para 2 carros, quintal nos fundos. Bairro residencial tranquilo."
+
+  - id: casa-uberaba-cwb-4q-lazer
+    codigo: "CA-002"
+    tipo: "casa"
+    nome: "Casa 4 quartos em Uberaba com piscina"
+    bairro: "Uberaba"
+    cidade: "Curitiba/PR"
+    valor_brl: 880000
+    area_m2: 220
+    quartos: 4
+    suites: 2
+    vagas: 3
+    sacada: true
+    vista: "jardim"
+    lazer_condominio: false
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["morar"]
+    tags: ["casa", "alto_padrao", "uberaba", "piscina", "familiar_grande", "lazer_privativo"]
+    descricao: "220m² construídos. 4 quartos (2 suítes), edícula, piscina, churrasqueira. 3 vagas. Terreno 360m². Pronto pra morar."
+
+  # ===== Coberturas =====
+  - id: cobertura-ecoville-cwb
+    codigo: "CO-001"
+    tipo: "cobertura"
+    nome: "Cobertura duplex Ecoville com vista panorâmica"
+    bairro: "Ecoville"
+    cidade: "Curitiba/PR"
+    valor_brl: 1450000
+    area_m2: 180
+    quartos: 3
+    suites: 2
+    vagas: 3
+    sacada: true
+    vista: "panoramica"
+    lazer_condominio: true
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["morar"]
+    tags: ["cobertura", "duplex", "alto_padrao", "ecoville", "vista_panoramica", "lazer", "familiar"]
+    descricao: "Cobertura duplex 180m², terraço privativo com churrasqueira, 3 quartos (2 suítes), 3 vagas. Edifício com lazer completo. Vista 360° de Curitiba."
+
+  # ===== Terrenos =====
+  - id: terreno-sao-jose-pinhais-300m2
+    codigo: "TE-001"
+    tipo: "terreno"
+    nome: "Terreno 300m² em São José dos Pinhais"
+    bairro: "Quissisana"
+    cidade: "São José dos Pinhais/PR"
+    valor_brl: 195000
+    area_m2: 300
+    quartos: 0
+    suites: 0
+    vagas: 0
+    sacada: false
+    vista: "rua"
+    lazer_condominio: false
+    pronto_para_morar: false
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["investir"]
+    tags: ["terreno", "sao_jose", "investimento", "valorizacao", "construcao"]
+    descricao: "Terreno plano 300m² (10x30), zoneamento residencial. Documentação em dia. Região em valorização pela proximidade do contorno e nova escola técnica."
+
+  # ===== Lançamentos =====
+  - id: lancamento-agua-verde-cwb-2q
+    codigo: "LA-001"
+    tipo: "lancamento"
+    nome: "Lançamento 2 quartos Água Verde (entrega 2027)"
+    bairro: "Água Verde"
+    cidade: "Curitiba/PR"
+    valor_brl: 540000
+    area_m2: 72
+    quartos: 2
+    suites: 1
+    vagas: 1
+    sacada: true
+    vista: "urbana"
+    lazer_condominio: true
+    pronto_para_morar: false
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["morar", "investir"]
+    tags: ["lancamento", "planta", "agua_verde", "valorizacao", "entrega_2027", "tabela_construtora"]
+    descricao: "72m², 2 quartos com suíte, sacada. Lazer com piscina, academia, coworking. Entrega prevista 12/2027. Condições de pagamento via tabela construtora — entrada parcelada até as chaves."
+
+  # ===== Segunda moradia (litoral) =====
+  - id: apto-praia-pontal-2q
+    codigo: "AP-101"
+    tipo: "apartamento"
+    nome: "Apartamento 2 quartos em Pontal do Paraná, 50m do mar"
+    bairro: "Praia de Leste"
+    cidade: "Pontal do Paraná/PR"
+    valor_brl: 380000
+    area_m2: 65
+    quartos: 2
+    suites: 1
+    vagas: 1
+    sacada: true
+    vista: "mar_lateral"
+    lazer_condominio: true
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["segunda", "investir"]
+    tags: ["apto", "litoral", "praia", "pontal", "vista_mar", "segunda_moradia", "temporada"]
+    descricao: "65m², 2 quartos (1 suíte), sacada com vista lateral pro mar. A 50m da areia. Condomínio com piscina e churrasqueira. Bom histórico de locação em temporada."
+
+  - id: casa-guaratuba-3q-praia
+    codigo: "CA-101"
+    tipo: "casa"
+    nome: "Casa 3 quartos em Guaratuba, próxima da praia central"
+    bairro: "Centro"
+    cidade: "Guaratuba/PR"
+    valor_brl: 720000
+    area_m2: 150
+    quartos: 3
+    suites: 2
+    vagas: 2
+    sacada: true
+    vista: "rua"
+    lazer_condominio: false
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["segunda"]
+    tags: ["casa", "litoral", "guaratuba", "praia_proxima", "segunda_moradia", "familiar"]
+    descricao: "150m² construídos, 3 quartos (2 suítes), churrasqueira, 2 vagas cobertas. 4 quadras da praia central. Documentação em dia."
+
+  # ===== Apartamentos 3 quartos (entry-level + investimento Airbnb) =====
+  - id: apto-centro-cwb-3q-compacto
+    codigo: "AP-005"
+    tipo: "apartamento"
+    nome: "Apartamento 3 quartos compacto no Centro de Curitiba"
+    bairro: "Centro"
+    cidade: "Curitiba/PR"
+    valor_brl: 420000
+    area_m2: 78
+    quartos: 3
+    suites: 1
+    vagas: 1
+    sacada: true
+    vista: "urbana"
+    lazer_condominio: false
+    pronto_para_morar: true
+    foto_url: "https://picsum.photos/id/1048/1080/720.jpg"
+    disponivel: true
+    finalidade_alvo: ["morar", "investir"]
+    tags: ["apto", "centro", "3_quartos", "investimento", "airbnb", "compacto", "comercio_proximo", "transporte_publico"]
+    descricao: "78m² bem aproveitados, 3 quartos (1 suíte), 1 vaga, sacada urbana. Edifício próximo a comércio e transporte. Boa liquidez pra locação por temporada (Airbnb) ou residencial."
+
+  - id: apto-centro-cwb-3q-reformado
+    codigo: "AP-006"
+    tipo: "apartamento"
+    nome: "Apartamento 3 quartos reformado no Centro de Curitiba"
+    bairro: "Centro"
+    cidade: "Curitiba/PR"
+    valor_brl: 365000
+    area_m2: 72
+    quartos: 3
+    suites: 0
+    vagas: 1
+    sacada: false
+    vista: "urbana"
+    lazer_condominio: false
+    pronto_para_morar: true
+    foto_url: "https://picsum.photos/id/1068/1080/720.jpg"
+    disponivel: true
+    finalidade_alvo: ["morar", "investir"]
+    tags: ["apto", "centro", "3_quartos", "reformado", "investimento", "airbnb", "ticket_baixo", "comercio_proximo"]
+    descricao: "72m², 3 quartos, 1 vaga, edifício consolidado em ponto privilegiado do Centro. Recém reformado (cozinha + banheiro). Ticket de entrada baixo pra Airbnb."
+
+  - id: apto-batel-cwb-3q-padrao
+    codigo: "AP-007"
+    tipo: "apartamento"
+    nome: "Apartamento 3 quartos no Batel com lazer"
+    bairro: "Batel"
+    cidade: "Curitiba/PR"
+    valor_brl: 560000
+    area_m2: 95
+    quartos: 3
+    suites: 1
+    vagas: 2
+    sacada: true
+    vista: "urbana"
+    lazer_condominio: true
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["morar", "investir"]
+    tags: ["apto", "batel", "3_quartos", "lazer", "investimento", "familiar"]
+    descricao: "95m², 3 quartos (1 suíte), 2 vagas, sacada. Condomínio com piscina e academia. Bairro nobre com alta demanda de locação."
+
+  - id: apto-agua-verde-cwb-2q-airbnb
+    codigo: "AP-008"
+    tipo: "apartamento"
+    nome: "Apartamento 2 quartos Água Verde para Airbnb"
+    bairro: "Água Verde"
+    cidade: "Curitiba/PR"
+    valor_brl: 310000
+    area_m2: 55
+    quartos: 2
+    suites: 1
+    vagas: 1
+    sacada: true
+    vista: "urbana"
+    lazer_condominio: true
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["investir"]
+    tags: ["apto", "agua_verde", "2_quartos", "investimento", "airbnb", "temporada", "ticket_baixo"]
+    descricao: "55m², 2 quartos (1 suíte), 1 vaga, sacada. Condomínio com lazer essencial. Bairro com forte demanda de locação por temporada. Mobília inclusa negociável."
+
+  # ===== Casas faixa média =====
+  - id: casa-sjp-3q-suite
+    codigo: "CA-003"
+    tipo: "casa"
+    nome: "Casa 3 quartos em São José dos Pinhais"
+    bairro: "Centro"
+    cidade: "São José dos Pinhais/PR"
+    valor_brl: 450000
+    area_m2: 145
+    quartos: 3
+    suites: 1
+    vagas: 2
+    sacada: false
+    vista: "rua"
+    lazer_condominio: false
+    pronto_para_morar: true
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["morar"]
+    tags: ["casa", "sao_jose", "3_quartos", "familiar", "quintal", "garagem_coberta"]
+    descricao: "145m² construídos em terreno de 250m². 3 quartos (1 suíte), garagem coberta pra 2 carros, quintal. Bairro residencial estabelecido."
+
+  # ===== Lançamento adicional =====
+  - id: lancamento-batel-cwb-3q
+    codigo: "LA-002"
+    tipo: "lancamento"
+    nome: "Lançamento 3 quartos Batel (entrega 2028)"
+    bairro: "Batel"
+    cidade: "Curitiba/PR"
+    valor_brl: 680000
+    area_m2: 105
+    quartos: 3
+    suites: 1
+    vagas: 2
+    sacada: true
+    vista: "parque"
+    lazer_condominio: true
+    pronto_para_morar: false
+    foto_url: ""
+    disponivel: true
+    finalidade_alvo: ["morar", "investir"]
+    tags: ["lancamento", "planta", "batel", "3_quartos", "valorizacao", "entrega_2028", "tabela_construtora", "lazer"]
+    descricao: "105m², 3 quartos (1 suíte), 2 vagas, sacada com vista parcial pro parque. Lazer completo: piscina, academia, salão, coworking. Entrega 06/2028. Tabela construtora com entrada parcelada até as chaves."

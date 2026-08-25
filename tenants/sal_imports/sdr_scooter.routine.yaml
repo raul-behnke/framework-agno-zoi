@@ -1,0 +1,587 @@
+routine_name: sdr_scooter
+version: 1
+
+flow_goal: |
+  Pré-atender lead de mobilidade elétrica (Sal Imports, Campo Grande/RJ) como
+  SDR das etapas 1-3. Fluxo: confirmar disponibilidade → nome → cidade →
+  perguntar se já tem modelo em mente. Em qualquer ponto até aqui, sinal de
+  ATACADO/revenda (lojista, quantidade/lote, "no atacado e no varejo") desvia
+  direto pro handoff de atacado, sem qualificar como varejo. SE TEM modelo:
+  capturar qual → scooter_search pelo nome → mostrar o card pra confirmar. SE
+  NÃO: perguntar tipo + faixa de preço + preferência de potência →
+  scooter_search (catálogo GHL). Scooter ganha pergunta extra (carenada ou
+  pneu largo); triciclo ganha pergunta de motivação (mobilidade/trabalho/
+  revenda — revenda também desvia pro atacado) → apresentar 2-3 modelos com
+  card+preço e pergunta de avanço → capturar modelo de interesse → qualificar
+  (cidade/CEP, forma de pagamento, urgência) → encaminhar pro vendedor com
+  handoff completo. NÃO faz crédito, NÃO coleta CPF, NÃO cota parcela. Lead
+  indisponível agora → follow-up (nurture). Objeção (preço/CNH/"vou pensar"/
+  desconfiança) tratada na hora.
+
+slots:
+  nome:             { type: string, required: true, description: "Nome do lead." }
+  disponivel_agora: { type: enum, values: [sim, nao], required: true, description: "Lead consegue falar agora." }
+  tem_modelo:       { type: enum, values: [sim, nao], description: "Lead já tem um modelo específico em mente." }
+  categoria_interesse: { type: enum, values: [scooter, moto, chopper, triciclo, bike, patinete, qualquer], description: "Tipo de veículo de interesse (seed da busca)." }
+  faixa_preco:      { type: string, description: "Faixa de preço pretendida (texto livre; ex 'até 8 mil')." }
+  potencia_pref:    { type: string, description: "Preferência de potência (texto livre; ex '1000W', 'mais forte', 'tanto faz')." }
+  uso:              { type: enum, values: [cidade, trabalho, lazer, entrega, qualquer], description: "Uso pretendido (não coletado no fluxo atual; mantido p/ lead_scoring se o lead volunteer)." }
+  modelo_interesse: { type: string, description: "Modelo que chamou a atenção do lead." }
+  cidade:           { type: string, description: "Cidade do lead." }
+  cep:              { type: string, description: "CEP (pro vendedor calcular frete)." }
+  forma_pagamento:  { type: enum, values: [financiamento, cartao, avista, pix, indeciso], description: "Forma de pagamento pretendida." }
+  urgencia:         { type: enum, values: [agora, semana, sem_pressa], description: "Urgência da compra." }
+  perfil_renda:     { type: enum, values: [clt, autonomo_mei, outro], description: "Perfil de renda (contexto pro vendedor)." }
+  quem_usa:         { type: string, description: "Quem vai usar o veículo." }
+  experiencia_previa: { type: enum, values: [sim, nao], description: "Já teve veículo elétrico." }
+  search_result:    { type: string, description: "Payload de scooter_search (JSON string)." }
+  perfil_compra:    { type: enum, values: [varejo, atacado], description: "Perfil de compra (varejo=consumidor final; atacado=lojista/revendedor) — extraído passivamente de sinal espontâneo (MT Anexo C), nunca perguntado direto." }
+  pneu_tipo:        { type: enum, values: [carenada, pneu_largo], description: "Preferência técnica de scooter (carenada ou pneu largo) — pergunta de qualificação específica de scooter." }
+  triciclo_uso:     { type: enum, values: [mobilidade, trabalho, revenda], description: "Motivação de compra do triciclo — mobilidade/conforto, trabalho (entrega/carga), ou revenda (aciona desvio pro atacado)." }
+  contexto_atacado: { type: string, description: "O que o lead de atacado já revelou (modelo, quantidade, se já tem loja) — contexto pro especialista de atacado, sem valor de tabela cotado." }
+
+main:
+  start: c_disponivel
+  nodes:
+    # ===== Etapa 1 — apresentação + disponibilidade (antes do nome) =====
+    c_disponivel:
+      type: collect_group
+      name: "Abertura — disponibilidade"
+      group_name: abertura
+      exit_policy: all
+      max_turns: 3
+      on_max_turns: c_abordagem
+      fields:
+        - name: disponivel_agora
+          cluster: contexto
+          required: true
+          question: "Opa, tudo bem? aqui é o Léo, da Sal Imports 😊 vi seu interesse nas elétricas. consegue falar agora, ou prefere que eu te chame mais tarde?"
+        - name: perfil_compra
+          cluster: contexto
+          required: false
+      next: d_disponivel
+
+    d_disponivel:
+      type: decide
+      name: "Lead disponível?"
+      branches:
+        - on_field: disponivel_agora
+          on_value: nao
+          next: e_followup
+      else: d_atacado
+
+    # ===== Gate de atacado (1) — logo após a abertura, antes de qualquer =====
+    # pergunta de varejo. Sinal espontâneo de atacado/revenda (MT Anexo C)
+    # desvia direto pro handoff de atacado, sem tentar vender 1 unidade.
+    d_atacado:
+      type: decide
+      name: "Sinal de atacado (gate 1)?"
+      branches:
+        - on_field: perfil_compra
+          on_value: atacado
+          next: ft_atacado
+      else: c_abordagem
+
+    # ===== Etapa 1b/2 COLAPSADAS (B1) — abordagem: nome, cidade, modelo em mente? =====
+    # c_perfil + c_tem_modelo fundidos num grupo só: slots co-locados => o reasoner
+    # pergunta de forma natural/combinada e MULTI-EXTRAI (até 12 set_slot/turno),
+    # em vez de marchar "nome? ... cidade? ... tem modelo?" em 3 turnos separados.
+    # tem_modelo segue required (o branch d_tem_modelo depende dele).
+    c_abordagem:
+      type: collect_group
+      name: "Abordagem (nome, cidade, modelo em mente?)"
+      group_name: abordagem
+      exit_policy: all
+      max_turns: 4
+      on_max_turns: d_tem_modelo
+      fields:
+        - name: nome
+          cluster: contexto
+          required: true
+          question: "show! pra começar, como é seu nome?"
+        - name: cidade
+          cluster: logistica
+          required: true
+          question: "boa! e você fala de qual cidade?"
+        - name: tem_modelo
+          cluster: identificacao
+          required: true
+          question: "você já tem algum modelo em mente ou prefere que eu te indique com base no que você procura?"
+        - name: perfil_compra
+          cluster: contexto
+          required: false
+      next: d_atacado2
+
+    # ===== Gate de atacado (2) — mesma checagem do gate 1, agora depois de =====
+    # nome/cidade/tem_modelo (o lead pode só revelar o perfil de lojista aqui).
+    d_atacado2:
+      type: decide
+      name: "Sinal de atacado (gate 2)?"
+      branches:
+        - on_field: perfil_compra
+          on_value: atacado
+          next: ft_atacado
+      else: d_tem_modelo
+
+    d_tem_modelo:
+      type: decide
+      name: "Já tem modelo em mente?"
+      branches:
+        - on_field: tem_modelo
+          on_value: sim
+          next: c_modelo
+      else: c_preferencia
+
+    c_modelo:
+      type: collect_group
+      name: "Qual modelo"
+      group_name: modelo
+      exit_policy: all
+      max_turns: 3
+      on_max_turns: c_preferencia
+      fields:
+        - name: modelo_interesse
+          cluster: identificacao
+          required: true
+          question: "boa, qual modelo te interessou? pode ser o nome ou a potência, tipo 1000W."
+      next: tool_search
+
+    c_preferencia:
+      type: collect_group
+      name: "Preferência"
+      group_name: preferencia
+      exit_policy: all
+      # P2 — "tenta firme + fallback": pede a faixa com firmeza, mas se o lead
+      # não souber/recusar em poucos turnos, segue pra busca AMPLA (widen).
+      max_turns: 3
+      on_max_turns: tool_search
+      fields:
+        - name: categoria_interesse
+          cluster: identificacao
+          # P2 — categoria INFERIDA (default qualquer/recall): optional, então o
+          # grupo sai só com faixa_preco e NÃO pergunta o tipo. Inferência canônica
+          # ainda capta se o lead citar um modelo/tipo; vazio => filtro passa-through
+          # (ignore_values:[qualquer]) => mostra todos os tipos.
+          required: false
+          question: "boa! você procura scooter, moto, chopper, triciclo, bike ou patinete elétrico?"
+        - name: faixa_preco
+          cluster: identificacao
+          required: true
+          question: "e qual faixa de preço você tá buscando? assim eu já te mostro o que cabe melhor."
+        - name: potencia_pref
+          cluster: identificacao
+          required: false
+          question: "tem preferência por alguma potência, tipo 800W ou 1000W, ou tanto faz?"
+        - name: perfil_compra
+          cluster: contexto
+          required: false
+      next: d_atacado3
+
+    # ===== Gate de atacado (3) — genérico, cobre sinal que chegou tarde =====
+    # (só depois de c_preferencia). Sem isso, um lead de scooter que só
+    # revela "sou lojista" durante a etapa de preferência passaria direto
+    # pra c_qualifica_scooter sem desviar (achado em smoke test live — o
+    # gate específico de triciclo, d_triciclo_revenda, não cobre esse caso
+    # pra scooter/moto/bike/etc).
+    d_atacado3:
+      type: decide
+      name: "Sinal de atacado (gate 3 — tardio)?"
+      branches:
+        - on_field: perfil_compra
+          on_value: atacado
+          next: ft_atacado
+      else: d_categoria_qualifica
+
+    # ===== Qualificação específica por linha (evidência forte: scooter e =====
+    # triciclo). Moto/bike/chopper/patinete/qualquer seguem direto pro
+    # caminho genérico (evidência real fraca demais pra lógica dedicada).
+    d_categoria_qualifica:
+      type: decide
+      name: "Qualificação específica por categoria?"
+      branches:
+        - on_field: categoria_interesse
+          on_value: scooter
+          next: c_qualifica_scooter
+        - on_field: categoria_interesse
+          on_value: triciclo
+          next: c_qualifica_triciclo
+      else: tool_search
+
+    c_qualifica_scooter:
+      type: collect_group
+      name: "Qualificação scooter — carenada ou pneu largo"
+      group_name: qualifica_scooter
+      exit_policy: all
+      max_turns: 2
+      on_max_turns: tool_search
+      fields:
+        - name: pneu_tipo
+          cluster: identificacao
+          required: true
+          question: "boa! você tem interesse em carenada ou pneu largo?"
+      next: tool_search
+
+    c_qualifica_triciclo:
+      type: collect_group
+      name: "Qualificação triciclo — motivação de compra"
+      group_name: qualifica_triciclo
+      exit_policy: all
+      max_turns: 2
+      on_max_turns: tool_search
+      fields:
+        - name: triciclo_uso
+          cluster: identificacao
+          required: true
+          question: "é pra sua mobilidade e conforto, é ferramenta de trabalho tipo entrega, ou você tem loja e quer revender?"
+      next: d_triciclo_revenda
+
+    # ===== Gate de atacado (3) — específico de triciclo: a própria pergunta =====
+    # de motivação já revela "revenda", então o desvio acontece aqui em vez
+    # dos gates genéricos 1/2.
+    d_triciclo_revenda:
+      type: decide
+      name: "Triciclo pra revenda?"
+      branches:
+        - on_field: triciclo_uso
+          on_value: revenda
+          next: ft_atacado
+      else: tool_search
+
+    tool_search:
+      type: tool
+      name: "Buscar modelos compatíveis"
+      kind: python
+      ref: scooter_search
+      args:
+        modelo: "{{ lead.modelo_interesse }}"
+        categoria: "{{ lead.categoria_interesse }}"
+        max_valor_brl: "{{ lead.faixa_preco }}"
+        potencia: "{{ lead.potencia_pref }}"
+        pneu_tipo: "{{ lead.pneu_tipo }}"
+        max_results: 3
+      output_to: search_result
+      next: d_has_results
+
+    d_has_results:
+      type: decide
+      name: "Tem resultado?"
+      branches:
+        - on_field: search_result.total
+          on_value: 0
+          next: ft_sem_resultado
+      else: ft_apresenta
+
+    ft_apresenta:
+      type: freetalk
+      name: "Apresentar modelos"
+      goal: |
+        scooter_search ACHOU modelos (total >= 1). Payload em `state.collected.search_result`
+        com `candidates` (array), `total`, `relaxed`.
+        ⚠️ LEAD RECORRENTE — quando o contexto de memória trouxer "já apresentei: <modelos>":
+        a PRIMEIRA frase da sua resposta DEVE reconhecer, pelo NOME, o(s) modelo(s) que você já
+        mostrou ("a M16 que te mostrei da última vez segue na faixa…" / "você tava vendo a M16 e
+        a TM-28…"), ANTES de qualquer apresentação nova. É PROIBIDO re-apresentar do zero como se
+        fosse a primeira vez. ADAPTE: se o lead retoma um desses modelos, re-ancore nele e avance
+        a decisão; se quer opções frescas, traga novos MAS ancorado no que já foi visto. Mantenha
+        o já-apresentado acessível — NUNCA o esconda. Tom natural e contextual; NUNCA diga "vi que
+        você..." nem liste a memória crua.
+        1. Disclosure honesta a partir de `relaxed` (INALTERADO): over_budget → preço real acima
+           da faixa, sem minimizar; not_found → "não trabalhamos com a <requested>", apresente
+           alternativas, NUNCA finja/descreva specs da <requested>; ampliação → avise natural.
+        2. Apresente UMA recomendação PRIMÁRIA forte com o PORQUÊ ancorado num critério que o LEAD
+           declarou ("você falou 20 km/dia → essa faz 60 km"). A primária é o top candidate — EXCETO
+           no caso de LEAD RECORRENTE (acima): aí a primária é o modelo que ele já viu e demonstrou
+           interesse, a menos que peça algo diferente. NUNCA justifique por atributo solto do produto;
+           NUNCA um porquê que contradiz o pedido do lead. Em seguida mencione até 2 alternativas em
+           UMA linha cada, rotuladas pelo trade-off ("a X é mais em conta; a Y tem mais autonomia").
+           NÃO despeje 3 fichas completas.
+        3. Ofereça proativamente DIREÇÕES de refino nomeadas ("quer algo mais em conta? com mais
+           autonomia? outra categoria?") — é o que faz o lead convergir rápido.
+        4. Se fizer sentido, mande a foto da PRIMÁRIA via send_album (item_id = codigo do candidato).
+           A seu critério; não floode a cada rodada.
+        5. Atributo que o catálogo NÃO indexa (ex.: "queria com bagageiro"): (a) admita que não tem
+           esse campo, (b) ofereça o mais próximo que TEM, (c) ofereça o vendedor. NUNCA afirme/invente
+           presença ou ausência do atributo.
+        6. Preço à vista em R$; specs APROXIMADAS (potência, autonomia em FAIXA). NUNCA invente
+           modelo/preço/specs fora do payload. NUNCA prometa autonomia máxima nem dispensa de CNH.
+           Parcela/financiamento → não cote, ofereça o especialista.
+        7. Mapeie a resposta pra UM sinal:
+           - `escolheu` — positivo a uma opção. Capture via set_slot modelo_interesse (codigo certo).
+             RESOLUÇÃO DE REFERENTE (INALTERADO): deíctico ('essa', 'gostei') após foco num modelo →
+             o escolhido é ESSE último; só pergunte se ambíguo entre dois cards.
+           - `refinar` — o lead CRITICA pedindo AJUSTE ('mais barato', 'mais autonomia', 'tem outra
+             categoria?', 'queria com X'). Extraia o critério novo via set_slot (faixa_preco,
+             potencia_pref, categoria_interesse, modelo_interesse) — o runtime refaz a busca.
+           - `quer_humano` — pediu vendedor/fechar/parcelar; OU você percebe frustração/thrashing.
+           - `sem_interesse` — rejeitou TUDO / desistiu ('nenhum', 'não quero nada disso').
+        DISTINÇÃO CRÍTICA: crítica pedindo ajuste = `refinar` (re-busca), NÃO `sem_interesse`.
+        PROIBIDO loop pedindo confirmação quando o lead já deu sinal claro.
+      scope: "Apresentar modelos do scooter_search com preço à vista e pergunta de avanço."
+      tools: [record_ft_signal, handoff_to_human]
+      signals: [escolheu, refinar, quer_humano, sem_interesse]
+      slots: [modelo_interesse]
+      max_turns: 4
+      # exit_on_timeout -> ft_repasse (review fix 2026-07-18, finding #1):
+      # era ft_objecoes. O lead que só usa o side-channel de re-busca
+      # ("mais barato"/"outras opções" — turn_manager._maybe_explore_research)
+      # nunca dá fresh-entry neste nó, então o cap determinístico
+      # (max_recommend_rounds/recommend_cap_target abaixo) nunca dispara por
+      # esse caminho. Este backstop de dwell (4 turnos sem sinal) agora cai
+      # direto no MESMO destino do cap (o vendedor), coerente com o objetivo
+      # da recomendação consultiva — não mais em ft_objecoes.
+      exit_on_timeout: ft_repasse
+      max_recommend_rounds: 3
+      recommend_cap_target: ft_repasse
+      reasoner_tier: standard
+      next: d_interesse
+
+    d_interesse:
+      type: decide
+      name: "Interesse?"
+      branches:
+        - on_signal: escolheu
+          next: ca_qualificacao
+        - on_signal: quer_humano
+          next: ft_repasse
+        - on_signal: refinar
+          next: tool_search
+        - on_signal: sem_interesse
+          next: ft_objecoes
+      else: ft_objecoes
+
+    ft_sem_resultado:
+      type: freetalk
+      name: "Sem resultado — ajustar ou encaminhar"
+      goal: |
+        scooter_search não achou modelo pro tipo pedido (search_result.total=0).
+        NÃO invente modelo. Seja honesto e ofereça DOIS caminhos: (1) abrir o
+        tipo (mostrar outros modelos disponíveis); (2) falar com o vendedor.
+        Mapeie pra UM sinal: `ajustar` (topa ver outros), `quer_humano`,
+        `desistiu`. PROIBIDO loop sem registrar signal.
+      scope: "Zero resultado; abrir o tipo ou encaminhar vendedor."
+      tools: [record_ft_signal, handoff_to_human]
+      signals: [ajustar, quer_humano, desistiu]
+      max_turns: 3
+      exit_on_timeout: d_engajado
+      reasoner_tier: standard
+      next: d_sem_resultado
+
+    d_sem_resultado:
+      type: decide
+      name: "Caminho pós zero-resultado"
+      branches:
+        - on_signal: ajustar
+          next: c_preferencia
+        - on_signal: quer_humano
+          next: ft_repasse
+        - on_signal: desistiu
+          next: e_nutricao
+      else: e_nutricao
+
+    ft_objecoes:
+      type: freetalk
+      name: "Tratar objeções"
+      goal: |
+        Lead não escolheu ou trouxe objeção. NÃO insista. Trate NA HORA:
+        - "boleto": a Sal Imports trabalha com boleto normalmente, é só mais
+          uma forma de pagamento (junto com cartão, financiamento e Pix).
+          Nunca recuse ou hesite.
+        - "caro"/"juros"/"preço": ancore no valor (garantia, assistência
+          técnica, atendimento consultivo) e ofereça encaminhar pro
+          especialista que monta a condição. NUNCA cote parcela.
+        - "preciso de CNH?": pode explicar o critério técnico de
+          autopropelido (distância entre eixos até 1,30m, guidão até 70cm,
+          velocidade máxima 32 km/h). NUNCA garanta a classificação de
+          cabeça — sempre feche remetendo a confirmação da ficha técnica
+          exata do modelo ao especialista antes de afirmar isenção com
+          certeza. Responda UMA vez; se o lead insistir, encaminhe pro
+          especialista — NÃO repita a mesma deflexão em loop.
+        - "vou pensar": registre, deixe a porta aberta, sem pressão.
+        - "é golpe?"/"vocês são confiáveis?"/pede CNPJ ou prova de endereço:
+          reforce que a Sal Imports tem CNPJ ativo e loja física, e que se ele
+          quiser mais segurança, o especialista pode fazer uma vídeo-chamada
+          rápida antes de fechar. Nunca minimize a pergunta nem soe na
+          defensiva. Responda uma vez; se insistir, encaminhe pro
+          especialista.
+        Próxima resposta DEVE disparar signal: `ver_outros` (quer mais opções),
+        `quer_humano` (encaminhar), `desistiu`. Positivo brando = ver_outros.
+      scope: "Objeção (preço/CNH/vou pensar); redirecionar/encaminhar/encerrar."
+      tools: [scooter_search, record_ft_signal, handoff_to_human]
+      signals: [ver_outros, quer_humano, desistiu]
+      max_turns: 3
+      exit_on_timeout: d_engajado
+      reasoner_tier: standard
+      next: d_obj
+
+    d_obj:
+      type: decide
+      name: "Sinal objeção?"
+      branches:
+        - on_signal: ver_outros
+          next: c_preferencia
+        - on_signal: quer_humano
+          next: ft_repasse
+        - on_signal: desistiu
+          next: e_nutricao
+      else: d_engajado
+
+    # ===== Etapa 3 — qualificação + handoff =====
+    ca_qualificacao:
+      type: call_subroutine
+      name: "Qualificar lead"
+      ref: sub_qualificacao
+      next: ft_repasse
+
+    ft_repasse:
+      type: freetalk
+      name: "Encaminhar pro vendedor"
+      goal: |
+        O lead está qualificado OU pediu pra falar com o vendedor. Agradeça,
+        diga com naturalidade que vai encaminhar pro especialista que monta a
+        melhor condição (crédito + parcela) e cuida do frete e fechamento, e
+        emita handoff_to_human. NÃO cote parcela nem prometa prazo. Se o lead
+        chegou aqui sem ter dado cidade/modelo, pode perguntar UMA coisa rápida
+        antes, mas não segure o lead. Termine cordial, com porta aberta. Esta é
+        a entrega do lead quente (R3).
+      scope: "Encaminhar o lead quente pro vendedor especialista."
+      tools: [handoff_to_human]
+      signals: []
+      max_turns: 2
+      exit_on_timeout: e_qualificado
+      reasoner_tier: standard
+      next: e_qualificado
+
+    # ===== Engajamento gate — lead engajado vai pro vendedor, frio vai pra nutrição =====
+    # Decide intermediário acionado no timeout de objeção ou quando nenhum sinal
+    # foi emitido (d_obj.else). Se o lead já demonstrou interesse real (tem modelo
+    # confirmado OU já comunicou preferência de categoria), encaminha pro vendedor
+    # em vez de encerrar. Lead sem engajamento comprovado → nutrição.
+    d_engajado:
+      type: decide
+      name: "Lead engajado? (tem modelo ou categoria → vendedor)"
+      branches:
+        - on_field: tem_modelo
+          on_value: sim
+          next: e_qualificado
+        - on_field: categoria_interesse
+          on_value: scooter
+          next: e_qualificado
+        - on_field: categoria_interesse
+          on_value: moto
+          next: e_qualificado
+        - on_field: categoria_interesse
+          on_value: chopper
+          next: e_qualificado
+        - on_field: categoria_interesse
+          on_value: triciclo
+          next: e_qualificado
+        - on_field: categoria_interesse
+          on_value: bike
+          next: e_qualificado
+        - on_field: categoria_interesse
+          on_value: patinete
+          next: e_qualificado
+        - on_field: categoria_interesse
+          on_value: qualquer
+          next: e_qualificado
+      else: e_nutricao
+
+    # ===== Atacado — encaminhamento direto, sem qualificar como varejo =====
+    ft_atacado:
+      type: freetalk
+      name: "Atacado detectado — encaminhar"
+      goal: |
+        Lead sinalizou perfil de ATACADO/revenda (perfil_compra=atacado ou
+        triciclo_uso=revenda). Isto é matéria do especialista de atacado, NÃO
+        do script de varejo — NÃO qualifique como consumidor final (nada de
+        cidade/CEP/forma de pagamento de varejo, nada de catálogo de varejo).
+        Confirme rapidamente que entendeu que é pra revenda, capture em UMA
+        frase o que ele já revelou (modelo, quantidade, se já tem loja) via
+        set_slot contexto_atacado, e diga que vai conectar com o time de
+        atacado, que monta a tabela por quantidade. Emita handoff_to_human.
+        NUNCA cite preço de atacado, tabela de volume ou desconto — isso é do
+        especialista. NUNCA faça pergunta de qualificação de varejo
+        (cidade/CEP/pagamento).
+      scope: "Lead de atacado/revenda; confirmar perfil e encaminhar pro especialista de atacado, sem qualificar como varejo."
+      tools: [handoff_to_human]
+      signals: []
+      slots: [contexto_atacado]
+      max_turns: 2
+      exit_on_timeout: e_atacado
+      reasoner_tier: standard
+      next: e_atacado
+
+    # ===== Ends =====
+    e_qualificado:
+      type: end
+      name: "Lead qualificado pro vendedor"
+      outcome: handed_off
+      role: qualified
+      farewell: "Ótimo! Já passei tudo pro nosso especialista — ele te chama em breve pra fechar os detalhes. 😊"
+    e_nutricao:
+      type: end
+      name: "Lead em nutrição"
+      outcome: handed_off
+      role: nurture
+      farewell: "Tudo certo! Quando precisar é só me chamar aqui. 👍"
+    e_followup:
+      type: end
+      name: "Follow-up — lead indisponível agora"
+      outcome: handed_off
+      farewell: "Combinado! Te contato mais tarde então. Até já 🙂"
+    e_atacado:
+      type: end
+      name: "Atacado — encaminhado pro especialista"
+      outcome: handed_off
+      farewell: "Show! Já te conecto com o time de atacado, que monta a tabela por quantidade certinho pra você. 😊"
+
+    e_handoff:
+      type: end
+      name: "Repassado pro time humano"
+      outcome: handed_off
+      role: handoff
+      farewell: "Show! Já passei seu contato pro nosso time — te chamam em breve. 😊"
+
+sub_routines:
+
+  sub_qualificacao:
+    start: c_qualifica
+    nodes:
+      c_qualifica:
+        type: collect_group
+        name: "Qualificação"
+        group_name: qualificacao
+        exit_policy: all
+        max_turns: 10
+        on_max_turns: e_qualif_ok
+        fields:
+          - name: cidade
+            cluster: logistica
+            required: true
+            question: "boa escolha! já vou adiantar tudo pro vendedor. qual sua cidade?"
+          - name: cep
+            cluster: logistica
+            required: true
+            question: "e o CEP? assim o vendedor já calcula o frete pra você."
+          - name: forma_pagamento
+            cluster: financeiro
+            required: true
+            question: "você pensa em pagar com financiamento, cartão, à vista ou Pix?"
+          - name: urgencia
+            cluster: contexto
+            required: false
+            question: "é pra agora, pros próximos dias, ou só pesquisando?"
+          - name: perfil_renda
+            cluster: financeiro
+            required: false
+            question: "(se for financiar) você é CLT, autônomo/MEI ou outro? ajuda o vendedor a já preparar a melhor condição."
+          - name: quem_usa
+            cluster: contexto
+            required: false
+            question: "é pra você ou pra outra pessoa usar?"
+          - name: experiencia_previa
+            cluster: contexto
+            required: false
+            question: "você já teve algum veículo elétrico antes?"
+        next: e_qualif_ok
+      e_qualif_ok: { type: end, name: "Qualificação coletada", outcome: abandoned }

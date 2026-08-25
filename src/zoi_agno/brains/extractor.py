@@ -65,12 +65,52 @@ INSTRUCOES = [
 ]
 
 
-def _contexto_do_no(node: Any, routine: Any) -> str:
-    """O que o extrator precisa saber sobre onde a conversa está.
+def _tipo_do_slot(nome: str, routine: Any) -> str:
+    decl = routine.slots.get(nome)
+    if decl is None:
+        return "?"
+    return f"enum{list(decl.values)}" if decl.values else str(decl.type)
 
-    Só o nó ativo — dar o grafo inteiro convida o modelo a preencher slots de
-    etapas futuras, que é exatamente o que a rule ``slot_scope`` derruba.
+
+def manifesto_de_slots(routine: Any, node: Any) -> str:
+    """Todos os slots declarados, marcando os que estão sendo perguntados.
+
+    O extrator precisa do manifesto inteiro, não só do grupo ativo — o lead
+    responde na ordem dele, não na do roteiro.
+
+    Falha real: o lead disse "sou o Marcos, consigo falar sim" enquanto o nó
+    ativo coletava só disponibilidade. Sem ver que ``nome`` existe, o extrator
+    descartou o nome, e o agente perguntou de novo nos dois turnos seguintes —
+    contra a instrução explícita da persona de nunca repetir pergunta já
+    respondida.
+
+    Isto não afrouxa a contenção: quem decide o que vira estado é a rule
+    ``slot_scope``, que já aceita qualquer slot declarado no fluxo. O que
+    mudou é o extrator saber que eles existem.
     """
+    if not routine.slots:
+        return ""
+    ativos: set[str] = set()
+    if isinstance(node, CollectGroupNode):
+        ativos = {f.name for f in node.fields}
+    elif isinstance(node, CollectNode):
+        ativos = {node.slot}
+    elif isinstance(node, FreeTalkNode):
+        ativos = set(node.slots or [])
+
+    linhas = ["Slots declarados neste fluxo (▶ = o que o agente está perguntando agora):"]
+    for nome in routine.slots:
+        marca = "▶" if nome in ativos else " "
+        linhas.append(f"  {marca} {nome}: {_tipo_do_slot(nome, routine)}")
+    linhas.append(
+        "Se o lead informar espontaneamente um slot que não está marcado, CAPTURE "
+        "assim mesmo — ele responde na ordem dele, não na do roteiro."
+    )
+    return "\n".join(linhas)
+
+
+def _contexto_do_no(node: Any, routine: Any) -> str:
+    """O que o agente está perguntando agora."""
     if isinstance(node, CollectGroupNode):
         linhas = [f"O agente está coletando o grupo {node.group_name!r}. Campos:"]
         for f in node.fields:
@@ -142,9 +182,8 @@ def montar_entrada(user_msg: str, node: Any, routine: Any, collected: dict[str, 
     """
     fluxo = contexto_de_fluxo({"collected": collected})
     ja = ", ".join(f"{k}={v!r}" for k, v in fluxo.slots.items()) or "nada"
-    return (
-        f"{linha_de_hoje()}\n\n"
-        f"{_contexto_do_no(node, routine)}\n\n"
-        f"Já coletado nesta conversa: {ja}\n\n"
-        f"Mensagem do lead: {user_msg!r}"
-    )
+    partes = [linha_de_hoje(), _contexto_do_no(node, routine)]
+    if manifesto := manifesto_de_slots(routine, node):
+        partes.append(manifesto)
+    partes += [f"Já coletado nesta conversa: {ja}", f"Mensagem do lead: {user_msg!r}"]
+    return "\n\n".join(partes)

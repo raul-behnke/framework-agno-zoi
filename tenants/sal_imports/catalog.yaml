@@ -1,0 +1,143 @@
+# Catálogo FICTÍCIO — fixture, não é o estoque de ninguém.
+#
+# Sintetizado no schema real que o motor de busca espera (mesmos nomes de
+# campo do `serialize` em config.yaml), para que filtros, scorers, widen,
+# diversidade e over-budget sejam exercitados de verdade.
+#
+# Substitui `source: ghl_products` por catálogo local: a Fase 3.5 do plano
+# manda rodar os tenants sem tocar a rede nem o CRM de um cliente ativo.
+#
+# Desenhado para cobrir os caminhos do motor:
+#   - faixas de preço distintas (widen por preço, over_budget_fallback)
+#   - potências escalonadas (widen por potência com step -200)
+#   - categorias variadas (widen por categoria)
+#   - itens com e sem foto (album_scope)
+#   - dois itens de preço próximo (diversidade por min_gap_pct)
+
+produtos:
+  # ===== scooters =====
+  - codigo: "SC-500"
+    nome: "Vento 500"
+    categoria: "scooter"
+    potencia_w: 500
+    autonomia_km: 45
+    velocidade_kmh: 32
+    valor_brl: 4990
+    pneu_tipo: "carenada"
+    descricao: "Scooter de entrada, leve, para trajeto curto na cidade."
+    foto_url: "https://exemplo.invalido/fixture/sc-500.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/sc-500-a.jpg"
+      - "https://exemplo.invalido/fixture/sc-500-b.jpg"
+
+  - codigo: "SC-800"
+    nome: "Vento 800"
+    categoria: "scooter"
+    potencia_w: 800
+    autonomia_km: 60
+    velocidade_kmh: 32
+    valor_brl: 6490
+    pneu_tipo: "carenada"
+    descricao: "Scooter carenada, autonomia média, boa para uso diário."
+    foto_url: "https://exemplo.invalido/fixture/sc-800.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/sc-800-a.jpg"
+
+  # Preço a 4% da SC-800: exercita o corte por diversidade (min_gap_pct 0.15).
+  - codigo: "SC-820"
+    nome: "Vento 820 Plus"
+    categoria: "scooter"
+    potencia_w: 800
+    autonomia_km: 65
+    velocidade_kmh: 32
+    valor_brl: 6750
+    pneu_tipo: "pneu_largo"
+    descricao: "Versão de pneu largo, mais estável em piso irregular."
+    foto_url: "https://exemplo.invalido/fixture/sc-820.jpg"
+    fotos: []
+
+  - codigo: "SC-1000"
+    nome: "Vento 1000 Max"
+    categoria: "scooter"
+    potencia_w: 1000
+    autonomia_km: 80
+    velocidade_kmh: 32
+    valor_brl: 8990
+    pneu_tipo: "pneu_largo"
+    descricao: "Topo da linha de scooter, maior autonomia e pneu largo."
+    foto_url: "https://exemplo.invalido/fixture/sc-1000.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/sc-1000-a.jpg"
+      - "https://exemplo.invalido/fixture/sc-1000-b.jpg"
+
+  # ===== motos =====
+  - codigo: "MT-1500"
+    nome: "Trilha 1500"
+    categoria: "moto"
+    potencia_w: 1500
+    autonomia_km: 90
+    velocidade_kmh: 60
+    valor_brl: 12900
+    descricao: "Moto elétrica para deslocamento médio."
+    foto_url: "https://exemplo.invalido/fixture/mt-1500.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/mt-1500-a.jpg"
+
+  # ===== chopper =====
+  - codigo: "CH-2000"
+    nome: "Chopper 2000"
+    categoria: "chopper"
+    potencia_w: 2000
+    autonomia_km: 100
+    velocidade_kmh: 70
+    valor_brl: 17900
+    descricao: "Chopper elétrica, posição de pilotagem relaxada."
+    foto_url: "https://exemplo.invalido/fixture/ch-2000.jpg"
+    fotos: []
+
+  # ===== triciclos =====
+  - codigo: "TR-1200"
+    nome: "Carga 1200"
+    categoria: "triciclo"
+    potencia_w: 1200
+    autonomia_km: 70
+    velocidade_kmh: 40
+    valor_brl: 14500
+    descricao: "Triciclo de carga, caçamba traseira, uso em entrega."
+    foto_url: "https://exemplo.invalido/fixture/tr-1200.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/tr-1200-a.jpg"
+
+  # Item SEM foto: exercita a rejeição `item_no_photo` do album_scope.
+  - codigo: "TR-800"
+    nome: "Passeio 800"
+    categoria: "triciclo"
+    potencia_w: 800
+    autonomia_km: 50
+    velocidade_kmh: 32
+    valor_brl: 9900
+    descricao: "Triciclo de passeio, três rodas, estável."
+
+  # ===== bike e patinete =====
+  - codigo: "BK-350"
+    nome: "Urbana 350"
+    categoria: "bike"
+    potencia_w: 350
+    autonomia_km: 40
+    velocidade_kmh: 25
+    valor_brl: 3490
+    descricao: "Bicicleta elétrica urbana, pedal assistido."
+    foto_url: "https://exemplo.invalido/fixture/bk-350.jpg"
+    fotos:
+      - "https://exemplo.invalido/fixture/bk-350-a.jpg"
+
+  - codigo: "PT-250"
+    nome: "Compacto 250"
+    categoria: "patinete"
+    potencia_w: 250
+    autonomia_km: 25
+    velocidade_kmh: 25
+    valor_brl: 1990
+    descricao: "Patinete elétrico dobrável, para última milha."
+    foto_url: "https://exemplo.invalido/fixture/pt-250.jpg"
+    fotos: []

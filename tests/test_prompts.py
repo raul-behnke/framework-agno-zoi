@@ -182,3 +182,64 @@ def test_no_de_conversa_sem_slot_nao_recebe_a_diretiva_de_pick() -> None:
     st = _estado()
     entrada = extractor.montar_entrada("oi", current_node(t.routine, st), t.routine, {})
     assert "TAMBÉM o signal" not in entrada
+
+
+def test_relaxed_do_motor_de_catalogo_vira_disclosure() -> None:
+    """O motor devolve dicionários descritivos, não nomes de eixo.
+
+    Integração real: uma tool simples pode devolver ``["preco"]`` e o motor
+    devolve ``[{"param": "potencia", "from": 1000, "to": 800}]``. Se o
+    grounding só entendesse uma das formas, a disclosure de honestidade
+    silenciosamente não sairia — exatamente no caso em que ela mais importa.
+    """
+    st = _estado()
+    st["collected"] = {
+        "busca": {
+            "candidates": [{"codigo": "SC-800"}],
+            "relaxed": [
+                {"param": "potencia", "from": 1000, "to": 800},
+                {"param": "categoria", "from": "scooter", "to": "scooter +1"},
+            ],
+        }
+    }
+    bloco = render_grounding(montar_grounding(st), "redator")
+    assert "AMPLIOU" in bloco
+    assert "potencia (1000 → 800)" in bloco
+    assert "categoria" in bloco
+
+
+def test_relaxed_como_lista_de_strings_tambem_funciona() -> None:
+    st = _estado()
+    st["collected"] = {"busca": {"candidates": [{"codigo": "X"}], "relaxed": ["preco"]}}
+    assert "preco" in render_grounding(montar_grounding(st), "redator")
+
+
+def test_o_extrator_ve_todos_os_slots_do_fluxo() -> None:
+    """O lead responde na ordem dele, não na do roteiro.
+
+    Falha real no sal_imports: o lead disse "sou o Marcos de Bangu, consigo
+    falar sim" enquanto o nó ativo coletava só disponibilidade. Sem ver que
+    ``nome`` e ``cidade`` existem, o extrator descartava os dois — e o agente
+    perguntava o nome de novo nos dois turnos seguintes.
+    """
+    from zoi_agno.brains.extractor import manifesto_de_slots
+
+    t = _tenant()
+    st = _estado()
+    node = current_node(t.routine, st)
+    m = manifesto_de_slots(t.routine, node)
+    # O grupo ativo coleta nome e servico; horario é de outra etapa.
+    assert "▶ nome" in m
+    assert "▶ servico" in m
+    assert "  horario" in m, "slot de etapa futura precisa aparecer, sem marca"
+    assert "CAPTURE" in m
+
+
+def test_o_manifesto_marca_so_o_que_esta_sendo_perguntado() -> None:
+    from zoi_agno.brains.extractor import manifesto_de_slots
+
+    t = _tenant()
+    st = _estado(current_node="ft_escolhe")
+    m = manifesto_de_slots(t.routine, current_node(t.routine, st))
+    assert "▶ horario" in m
+    assert "▶ nome" not in m

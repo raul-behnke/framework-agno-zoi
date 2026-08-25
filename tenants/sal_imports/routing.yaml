@@ -1,0 +1,33 @@
+# 2026-07-18: INVERTIDO — gpt-5.4-mini primary, DeepSeek V4 Pro no fallback (em
+# TODOS os roles conversacionais). Antes era DeepSeek primary (2026-06-22), o que
+# deixava os bots degradados sempre que o saldo do DeepSeek zerava (primary falha
+# → cai no fallback a cada turno, loga gateway.fallback_arm_used). Invertendo,
+# saldo zerado do DeepSeek não afeta mais o serviço. Espelha o zoi_sdr (invertido
+# em 2026-07-06). Qualidade: igual-ou-melhor — o extractor já era gpt-5.4-mini
+# (json_object do DeepSeek esvaziava/errava extração), e o histórico mostra o
+# reasoner DeepSeek distorcendo preço ±1% e emitindo sinal terminal errado.
+# DeepSeek segue em TODOS os fallbacks = kill-switch grátis. Reverter = git checkout.
+# Thinking DESLIGADO pro deepseek no adapter (litellm_adapter.py) — evita bug
+# LiteLLM #26395 (multi-turn reasoning_content) que atinge cmdgen/critic.
+roles:
+  agent:
+    primary: gpt-5.4-mini
+    fallbacks: [deepseek/deepseek-v4-pro, gpt-4o]
+  # extractor (cmdgen) já era gpt-5.4-mini primary desde 2026-06-25 (precedente
+  # b9dda630c: json_object do DeepSeek esvazia/erra extração intermitentemente —
+  # visto live: alucinou tem_modelo=sim numa resposta curta → flip-flop de fluxo).
+  extractor:
+    primary: gpt-5.4-mini
+    fallbacks: [deepseek/deepseek-v4-pro, gpt-4o-mini, gpt-4o]
+  freetalk:
+    primary: gpt-5.4-mini
+    fallbacks: [deepseek/deepseek-v4-pro, gpt-4o]
+  perception:
+    primary: gpt-5.4-mini
+    fallbacks: [deepseek/deepseek-v4-pro, gpt-4o]
+  collect:
+    primary: gpt-5.4-mini
+    fallbacks: [deepseek/deepseek-v4-pro, gpt-4o-mini]
+  judge:
+    primary: gpt-5.4-mini
+    fallbacks: [deepseek/deepseek-v4-pro, gpt-4o-mini]

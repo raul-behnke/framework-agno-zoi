@@ -39,6 +39,8 @@ class Tenant:
     config: dict[str, Any] = field(default_factory=dict)
     routing: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    dir: Path | None = None
+    """Onde o tenant vive — o motor de catálogo lê o catalog.yaml daqui."""
 
     @property
     def routine_version(self) -> str:
@@ -99,6 +101,7 @@ def load_tenant(tenant_id: str, *, base_dir: Path | str | None = None) -> Tenant
         config=_load_yaml(root / "config.yaml"),
         routing=_load_yaml(root / "routing.yaml").get("roles", {}),
         warnings=warnings,
+        dir=root,
     )
 
 

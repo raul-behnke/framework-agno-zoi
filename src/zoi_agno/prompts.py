@@ -112,6 +112,30 @@ class Grounding:
     """Eixos que a busca teve que ceder para achar algo."""
 
 
+def _eixos_relaxados(bruto: Any) -> list[str]:
+    """Normaliza o campo ``relaxed`` de um payload de busca.
+
+    O motor de catálogo devolve dicionários descritivos
+    (``{"param": "potencia", "from": 1000, "to": 800}``); uma tool mais simples
+    pode devolver só o nome do eixo. Aceitar as duas formas evita que a
+    disclosure de honestidade dependa de qual tool rodou.
+    """
+    if not bruto:
+        return []
+    itens = bruto if isinstance(bruto, list) else [bruto]
+    eixos: list[str] = []
+    for x in itens:
+        if isinstance(x, dict):
+            nome = x.get("param") or x.get("field") or x.get("campo")
+            if not nome:
+                continue
+            de, para = x.get("from"), x.get("to")
+            eixos.append(f"{nome} ({de} → {para})" if de is not None else str(nome))
+        elif x:
+            eixos.append(str(x))
+    return eixos
+
+
 def montar_grounding(state: dict[str, Any]) -> Grounding:
     """Lê os canais de grounding do estado. Puro e fail-soft."""
     collected = state.get("collected") or {}
@@ -122,11 +146,7 @@ def montar_grounding(state: dict[str, Any]) -> Grounding:
     }
     relaxado: list[str] = []
     for p in payloads.values():
-        r = p.get("relaxed")
-        if isinstance(r, list):
-            relaxado.extend(str(x) for x in r)
-        elif isinstance(r, str):
-            relaxado.append(r)
+        relaxado.extend(_eixos_relaxados(p.get("relaxed")))
     return Grounding(
         payloads=payloads,
         fatos_conhecidos=list(state.get("_known_facts") or []),

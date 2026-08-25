@@ -1,0 +1,65 @@
+# FIXTURE — igual ao tenant de produção, com DUAS diferenças, ambas para que
+# ele rode sem rede e sem tocar o CRM de um cliente ativo:
+#   1. `source: ghl_products` virou catálogo local (catalog.yaml sintético)
+#   2. ids de conta substituídos por FIXTURE_*
+# O resto — filtros, scorers, widen, diversidade, over-budget — é idêntico.
+tools:
+  scooter_search:
+    kind: catalog
+    module: zoi_agno.tools.catalog_search
+    name: scooter_search
+    catalog_key: produtos          # lê tenants/<tenant>/catalog.yaml
+    id_field: codigo
+    max_results: { default: 3, min: 1, max: 6 }
+    serialize:
+      - codigo
+      - nome
+      - categoria
+      - potencia_w
+      - autonomia_km
+      - velocidade_kmh
+      - valor_brl
+      - descricao
+      - foto_url
+      - fotos
+      - pneu_tipo
+    filters:
+      - { field: categoria, op: eq, from_input: categoria, ignore_values: [qualquer] }
+      - { field: valor_brl, op: lte, from_input: max_valor_brl, coerce: money_brl, hard: true }
+      # potência declarada = PISO real (>=), não só um boost. Sem isso a
+      # diversidade de preço atropelava: lead pede 800W e vinha 500/600W.
+      # Vazio quando o lead não diz potência (filtro inativo). Relaxável via widen.
+      - { field: potencia_w, op: gte, from_input: potencia, coerce: int_count }
+    scorers:
+      # modelo em mente → fuzzy no nome (acha o modelo nomeado em qualquer categoria)
+      - { from_input: modelo, match: fuzzy_multi, weight: 1, tiers: [ { field: nome, exact: 30, partial: 15, symmetric: true } ] }
+      - { from_input: categoria, field: categoria, match: eq, weight: 8, ignore_values: [qualquer] }
+      # faixa de preço = âncora suave (prioriza perto/abaixo do orçamento)
+      - { from_input: max_valor_brl, field: valor_brl, match: near, coerce: money_brl, tiers: [[0.85, 6], [1.0, 3]] }
+      # potência: boost só quando vier número (int_count); vago/"tanto faz" → inativo
+      - { from_input: potencia, field: potencia_w, match: near, coerce: int_count, tiers: [[1.0, 4], [1.25, 2]] }
+      # pneu_tipo = scorer, NUNCA filter (2026-07-15): o campo vem de uma GHL
+      # Product variant que o cliente ainda não populou em nenhum SKU — um
+      # filtro hard: eq excluiria TODO o catálogo no dia do deploy (item.get
+      # (field)=None + target dado => bool(None==target)=False, ver
+      # catalog_search.py::_passes_filter). Scorer degrada pra 0 pontos extras
+      # em item sem o campo (idêntico ao comportamento pré-mudança) até o
+      # cliente cadastrar a variante por SKU.
+      - { from_input: pneu_tipo, field: pneu_tipo, match: eq, weight: 6 }
+    # widen priority = custo de compromisso (1 = lead cede primeiro). Hard constraints (preço) NÃO entram aqui — usam over_budget_fallback.
+    widen:
+      # potência cede ANTES da categoria: um comprador de scooter prefere uma
+      # scooter com menos potência a um veículo de outro tipo. step -200W/iter.
+      potencia:      { auto: true, op: step, from_input: potencia, coerce: int_count, step: -200, priority: 1 }
+      categoria:     { auto: true, op: drop_score_gate, from_input: categoria, priority: 2 }
+    # superlativo de característica ("a mais potente") vira ORDENAÇÃO desc pelo
+    # campo mapeado + SUPRIME a diversity de preço (senão a top de potência é
+    # expulsa). Reusa os padrões _SUPERLATIVE (potencia -> potencia_w). Opt-in.
+    sort: { from_input: potencia }
+    # greedy price diversity: keep top-ranked + spread by min_gap_pct
+    diversity: { field: valor_brl, min_gap_pct: 0.15 }
+    over_budget_fallback: { field: valor_brl, from_input: max_valor_brl, coerce: money_brl, max_k: 3, interactive: true, max_stretch_pct: 0.25, named_model: true }
+    # modelo NOMEADO sem casamento no catálogo (ex.: marca concorrente "Voltz") →
+    # sinaliza not_found em relaxed p/ o reasoner declarar honesto, em vez de
+    # substituir em silêncio (caça 2026-06-27, d_voltz). Opt-in.
+    disclose_named_not_found: true

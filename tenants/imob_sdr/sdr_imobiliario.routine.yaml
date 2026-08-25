@@ -1,0 +1,602 @@
+# Migrated from sdr_imobiliario_main.bpmn + sub_agendamento.bpmn + sub_refinar_busca.bpmn (2026-05-22).
+# Migration prompt: superpowers/specs/2026-05-22-bpmn-to-routine-migration-prompt.md
+# Hand-verify per plan §3.1 — items flagged with `# WARNING:` need operator decision.
+
+routine_name: sdr_imobiliario
+version: 1
+
+flow_goal: |
+  Atender lead WhatsApp da imobiliária como SDR de pré-venda. Fluxo:
+  qualificação em 10 campos (nome, finalidade, região, tipo, quartos,
+  características, faixa, forma_pagamento, prazo, decisor) → busca
+  determinística no catálogo via property_search → apresentação consultiva
+  de 2-4 imóveis compatíveis com justificativa por opção → validação de
+  interesse → agendamento com corretor (sub_agendamento) ou refinamento de
+  critério (sub_refinar_busca) ou tratamento de objeções via FreeTalk. NÃO
+  fecha venda, NÃO negocia preço, NÃO emite contrato — corretor humano cuida
+  disso. Lead sem aderência ao portfólio recebe handoff educado pra nutrição.
+
+slots:
+  nome:
+    type: string
+    required: true
+    description: "Nome completo do lead."
+  finalidade:
+    type: enum
+    values: [morar, investir, segunda]
+    required: true
+    description: "Finalidade da compra: morar / investir / segunda casa."
+  regiao:
+    type: string
+    required: true
+    description: "Região ou bairro de interesse."
+  tipo_imovel:
+    type: enum
+    values: [apartamento, casa, terreno, cobertura, lancamento]
+    required: true
+    description: "Tipo de imóvel buscado."
+  quartos:
+    type: enum
+    values: ["1", "2", "3", "4", "5_ou_mais", "terreno"]
+    required: true
+    description: "Quantidade de quartos (ou 'terreno' quando não aplicável)."
+  caracteristicas:
+    type: string
+    required: true
+    description: "Características essenciais: suíte/sacada/lazer/vaga/área."
+  faixa_investimento:
+    type: string
+    required: true
+    description: "Faixa de investimento (aproximada, e.g. 'uns 500 mil')."
+  forma_pagamento:
+    type: string
+    required: true
+    description: "Forma de pagamento: à vista / financiada / composição / permuta."
+  prazo_compra:
+    type: string
+    required: true
+    description: "Prazo de compra: agora / uns meses / sem prazo definido."
+  decisor:
+    type: string
+    required: true
+    description: "Quem decide a compra: lead, cônjuge, família, sócio."
+
+  # ===== slots derived from tool outputs =====
+  search_result:
+    type: string
+    description: "Payload completo de property_search (estruturado como string JSON)."
+
+  # ===== sub_agendamento =====
+  dia_agendamento:
+    type: enum
+    values: [segunda, terca, quarta, quinta, sexta, semana, sabado, qualquer]
+    description: "Dia preferido pra contato do corretor — aceita dia específico (ex. sexta) ou janela (semana/sábado)."
+  turno_agendamento:
+    type: enum
+    values: [manha, tarde, qualquer]
+    description: "Turno preferido pra contato."
+  canal_preferido:
+    type: enum
+    values: [whatsapp, ligacao, qualquer]
+    description: "Canal preferido pra contato do corretor."
+
+  # ===== scheduling (spec 2026-06-11) =====
+  available_slots:
+    type: string
+    description: "Payload de get_available_slots (JSON: slots/total/widened)."
+  slot_escolhido:
+    type: string
+    description: "slot_id (ISO start) do horário escolhido pelo lead — deve vir de available_slots."
+  booking_result:
+    type: string
+    description: "Payload de book_appointment (JSON: status/slot_label)."
+
+  # ===== sub_refinar_busca local =====
+  ajuste_solicitado:
+    type: string
+    description: "Dimensão de busca ajustada (valor / local / tamanho / tipo)."
+
+main:
+  start: c_qualif
+  nodes:
+    # ============================================================
+    # FASE 1 — Qualificação CollectGroup (10 campos, cluster-tagged)
+    # ============================================================
+
+    c_qualif:
+      type: collect_group
+      name: "Qualificação do lead"
+      group_name: qualif_perfil
+      exit_policy: all
+      max_turns: 14
+      on_max_turns: tool_search_imoveis
+      fields:
+        - name: nome
+          cluster: contexto
+          question: "oi, tudo certo? aqui é a Carla da imobiliária. vi que você demonstrou interesse num imóvel com a gente. pra começar, qual seu nome?"
+        - name: finalidade
+          cluster: contexto
+          question: "esse imóvel é pra morar mesmo, pra investir, ou tá olhando pra uma segunda casa (tipo praia, fim de semana)?"
+        - name: regiao
+          cluster: identificacao
+          question: "tem alguma região ou bairro de preferência? pode ser específico (tipo Batel, Centro) ou mais amplo (Curitiba, litoral, região metropolitana)."
+        - name: tipo_imovel
+          cluster: identificacao
+          question: "tu pensa mais em apartamento, casa, terreno, cobertura, ou tá aberto também a lançamento na planta?"
+        - name: quartos
+          cluster: identificacao
+          question: "quantos quartos seriam ideais pra você?"
+        - name: caracteristicas
+          cluster: identificacao
+          question: "o que mais seria indispensável pra você? suíte, sacada, vista, lazer no condomínio, vaga de garagem, proximidade da praia, área grande... me passa o que pesa mais."
+        - name: faixa_investimento
+          cluster: financeiro
+          question: "pra eu te mandar opções alinhadas mesmo, você pensa em investir até qual faixa? pode ser aproximado, tipo 'uns 500 mil' ou 'até 800k'."
+        - name: forma_pagamento
+          cluster: financeiro
+          question: "e a compra seria à vista, financiada, uma composição dos dois, ou rola alguma permuta (imóvel ou veículo na troca)?"
+        - name: prazo_compra
+          cluster: contexto
+          question: "tá pensando em fechar em quanto tempo? agora pra logo, uns meses, ou ainda sem prazo definido?"
+        - name: decisor
+          cluster: contexto
+          question: "a decisão é só sua mesmo, ou tem mais alguém envolvido (esposa, marido, família, sócio)?"
+      next: tool_search_imoveis
+
+    # ============================================================
+    # FASE 2 — Busca determinística
+    # ============================================================
+
+    tool_search_imoveis:
+      type: tool
+      name: "Buscar imóveis compatíveis"
+      kind: python
+      ref: property_search
+      args:
+        finalidade: "{{ lead.finalidade }}"
+        regiao: "{{ lead.regiao }}"
+        tipo: "{{ lead.tipo_imovel }}"
+        max_valor_brl: "{{ lead.faixa_investimento }}"
+        min_quartos: "{{ lead.quartos }}"
+        caracteristicas_text: "{{ lead.caracteristicas }}"
+        max_results: 3
+      output_to: search_result
+      next: d_has_results
+
+    # ============================================================
+    # FASE 3 — Roteamento determinístico de resultados + apresentação
+    # ============================================================
+    #
+    # Refactor 2026-05-29 (Search Widening, Bloco 4.2): a detecção de
+    # zero-resultado deixou de ser LLM-driven (era dentro de ft_apresenta) e
+    # virou um Decide determinístico (`d_has_results`). O handler
+    # property_search agora auto-amplia critérios (widen) e retorna
+    # {candidates, total, widened, relaxed}. Decide roteia em
+    # `search_result.total`: 0 → dead-end ft_sem_resultado; >=1 → ft_apresenta
+    # (sempre com candidatos, incluindo casos auto-ampliados).
+    # Spec: superpowers/specs/2026-05-29-search-widening-design.md §Architecture-3.
+
+    d_has_results:
+      type: decide
+      name: "Tem resultado?"
+      branches:
+        - on_field: search_result.total
+          on_value: 0
+          next: ft_sem_resultado
+      else: ft_apresenta
+
+    ft_apresenta:
+      type: freetalk
+      name: "Apresentar opções"
+      goal: |
+        Lead passou pela qualificação (10 campos), property_search rodou e
+        ACHOU opções (este nó só roda com total >= 1 — o roteamento de
+        zero-resultado é determinístico no Decide anterior). O payload está
+        em `state.search_result` com `candidates` (array), `total` (int),
+        `widened` (bool) e `relaxed` (lista de ajustes aplicados, cada item
+        {param, from, to}).
+
+        Sua tarefa:
+        1. Se `search_result.relaxed` NÃO estiver vazia, anuncie de forma
+           natural e honesta o que foi ampliado ANTES de apresentar — sem
+           jargão técnico. Ex.: "não achei exatamente no Centro com esse
+           valor, então ampliei um pouco e achei estas aqui:" ou "subi um
+           pouco a faixa de valor pra te trazer opções boas:". Use os campos
+           param/from/to pra deixar claro o que mudou (valor / região /
+           quartos), mas em linguagem de gente.
+
+        2. Apresente 2-3 melhores opções de `candidates` com justificativa
+           "por que faz sentido" ancorada em algo que o lead falou. Inclua
+           por opção: código, nome/bairro, valor (formatado R$), quartos/
+           suítes/vagas/área, descrição. NUNCA invente código/valor/bairro
+           fora do payload. Após apresentar, pergunte: "alguma chegou mais
+           perto do que você procura?"
+
+        3. Mapeie a resposta do lead pra UM dos 3 sinais:
+           - `gostou` — 'sim', 'gostei', 'opção 1/2/3', 'essa primeira',
+             'pode ser essa', 'fechou', 'topa', qualquer sinal positivo a
+             uma opção específica. Sinal positivo brando = gostou.
+           - `nao_gostou` — 'não gostei', 'nenhuma', 'não bateu'.
+           - `quer_corretor` — pediu corretor/especialista/atendente.
+
+        PROIBIDO loop pedindo confirmação quando lead já deu sinal claro.
+        NUNCA invente código/valor — comente apenas o que veio no
+        property_search payload.
+      scope: "Apresentar property_search results (sempre há candidatos); anunciar ampliação quando houve."
+      tools: [record_ft_signal, handoff_to_human]
+      signals: [gostou, nao_gostou, quer_corretor]
+      max_turns: 3
+      exit_on_timeout: ft_objecoes
+      reasoner_tier: standard
+      next: d_interesse
+
+    d_interesse:
+      type: decide
+      name: "Interesse?"
+      branches:
+        - on_signal: gostou
+          next: ca_agendamento
+        - on_signal: quer_corretor
+          next: ca_agendamento
+        - on_signal: nao_gostou
+          next: ft_objecoes
+      else: ft_objecoes
+
+    # ============================================================
+    # FASE 3b — Dead-end de zero-resultado (pós-widen exaustivo)
+    # ============================================================
+    #
+    # Search Widening 4.2: chegamos aqui só quando property_search não achou
+    # nenhum imóvel mesmo após auto-ampliar os critérios não-sensíveis
+    # (valor +%/quartos -1/região). Resta pedir ao lead pra relaxar uma
+    # dimensão SENSÍVEL (preço/região, decisão comercial dele) ou escalar pro
+    # corretor. Distinto do ciclo nao_gostou (ft_objecoes/sub_refinar_busca),
+    # que trata "vi opções e não gostei".
+
+    ft_sem_resultado:
+      type: freetalk
+      name: "Sem resultado — pedir relaxar dimensão sensível ou escalar"
+      goal: |
+        property_search rodou e NÃO achou nenhum imóvel compatível, mesmo
+        depois de ampliarmos automaticamente os critérios que dava pra
+        ajustar sem consultar o lead. `state.search_result.total` é 0.
+
+        NÃO invente imóvel/código/valor — não há candidatos. Seja honesto e
+        acolhedor: explique brevemente que com o perfil exato (e mesmo
+        flexibilizando um pouco) o portfólio não tem match agora, e ofereça
+        DOIS caminhos:
+          1. Ajustar uma dimensão mais sensível — principalmente a faixa de
+             valor ou a região (que a gente não mexe sozinho). Ex.: "consigo
+             buscar de novo se você topar abrir um pouco a faixa de valor ou
+             considerar uma região vizinha — qual faz mais sentido?"
+          2. Falar direto com um corretor/especialista, que pode ter opções
+             fora do que tá no sistema.
+
+        Mapeie a resposta do lead pra UM dos 3 sinais:
+          - `ajustar_busca` — lead topa mexer em valor/região/critério, quer
+            que a gente busque de novo, ou pede mais opções.
+          - `quer_corretor` — pediu corretor/especialista/atendente, ou quer
+            ajuda humana.
+          - `desistiu` — lead encerra, não quer ajustar nem falar com
+            ninguém ('deixa pra lá', 'depois eu vejo', silêncio prolongado).
+        PROIBIDO loop sem registrar signal quando o lead já respondeu.
+      scope: "Zero resultado pós-widen; pedir relaxar valor/região ou escalar corretor."
+      tools: [record_ft_signal, handoff_to_human]
+      signals: [ajustar_busca, quer_corretor, desistiu]
+      max_turns: 3
+      exit_on_timeout: e_nutricao
+      reasoner_tier: standard
+      next: d_sem_resultado
+
+    d_sem_resultado:
+      type: decide
+      name: "Caminho pós zero-resultado"
+      branches:
+        - on_signal: ajustar_busca
+          next: ca_refinar_busca
+        - on_signal: quer_corretor
+          next: ca_agendamento
+        - on_signal: desistiu
+          next: e_nutricao
+      else: e_nutricao
+
+    # ============================================================
+    # FASE 4 — Refinar busca (sub-routine) + Objeções
+    # ============================================================
+
+    ca_refinar_busca:
+      type: call_subroutine
+      name: "Refinar busca"
+      ref: sub_refinar_busca
+      next: tool_search_imoveis
+      # NB: zoi:outputs JSON dropped per ADR-0001 Q9 (shared state).
+      # Sub-routine writes faixa_investimento/regiao/caracteristicas/
+      # tipo_imovel/ajuste_solicitado directly into parent state via shared slots.
+
+    ft_objecoes:
+      type: freetalk
+      name: "Tratar objeções"
+      goal: |
+        Lead não gostou das opções OU falhou em escolher OU expressou
+        objeção. NÃO insista — escute, refine perfil OU encaminhe corretor
+        OU encerre educado. Objeções comuns playbook §15: 'achei caro',
+        'só estou olhando', 'vou pensar', 'falar com cônjuge', 'tem algo
+        mais barato', 'achei outro mais barato', 'medo de financiamento',
+        'sem entrada'. NUNCA invente código/valor/bairro — use só
+        property_search com critério ajustado. PROIBIDO loop apresentando
+        info sem registrar signal. Próxima resposta do lead DEVE disparar
+        signal: pediu_refinar (quer novas opções) OU pediu_corretor (escala
+        humano) OU desistiu (sem interesse). Lead com qualquer sinal
+        positivo brando (tipo 'pode ser', 'fechou') = pediu_refinar.
+        Lead silencioso pós-3 turnos = desistiu.
+      scope: "Lead não gostou ou expressou objeção; refinar/escalar/encerrar."
+      tools: [property_search, record_ft_signal, handoff_to_human]
+      signals: [pediu_refinar, pediu_corretor, desistiu]
+      max_turns: 3
+      exit_on_timeout: e_nutricao
+      reasoner_tier: standard
+      next: d_obj
+
+    d_obj:
+      type: decide
+      name: "Sinal objeção?"
+      branches:
+        - on_signal: pediu_refinar
+          next: ca_refinar_busca
+        - on_signal: pediu_corretor
+          next: ca_agendamento
+        - on_signal: desistiu
+          next: e_nutricao
+      else: e_nutricao
+
+    # ============================================================
+    # FASE 5 — Agendamento (sub-routine)
+    # ============================================================
+
+    ca_agendamento:
+      type: call_subroutine
+      name: "Coletar preferências de agendamento"
+      ref: sub_agendamento
+      next: e_qualificado
+
+    # ============================================================
+    # End events
+    # ============================================================
+
+    e_qualificado:
+      type: end
+      name: "Lead qualificado pra corretor"
+      outcome: handed_off
+      role: qualified
+      farewell: "Ótimo! Já passei tudo pro nosso especialista — ele te chama em breve pra agendar a visita. 😊"
+
+    e_nutricao:
+      type: end
+      name: "Lead em nutrição"
+      outcome: handed_off
+      role: nurture
+      farewell: "Tudo certo! Quando precisar é só me chamar aqui. 👍"
+
+    e_handoff:
+      type: end
+      name: "Repassado pro time humano"
+      outcome: handed_off
+      role: handoff
+      farewell: "Prontinho! Já passei seu contato pro nosso especialista — te chama em breve. 😊"
+
+    # e_walkaway dropped: legacy BPMN routed via zoi:on_max_attempts; Routine
+    # model uses adapter default max_attempts=3 (S1 of plan) without explicit
+    # walkaway target. Semantics: leads exceeding max_attempts now fall
+    # through to next node in linear sequence.
+
+# ============================================================
+# Sub-routines
+# ============================================================
+
+sub_routines:
+
+  sub_agendamento:
+    start: c_agendamento_group
+    nodes:
+      c_agendamento_group:
+        type: collect_group
+        name: "Preferências de agendamento"
+        group_name: agendamento_imob
+        exit_policy: all
+        max_turns: 6
+        on_max_turns: e_ag_parcial
+        fields:
+          - name: dia_agendamento
+            cluster: agendamento
+            required: true
+            question: "pra acertar com o especialista — pra você é melhor falar com ele durante a semana ou no sábado?"
+          - name: turno_agendamento
+            cluster: agendamento
+            required: true
+            question: "manhã ou tarde?"
+          - name: canal_preferido
+            cluster: agendamento
+            required: true
+            question: "prefere whatsapp ou ligação?"
+        next: tool_slots
+
+      tool_slots:
+        type: tool
+        name: "Buscar horários livres"
+        kind: python
+        ref: get_available_slots
+        args:
+          dia: "{{ lead.dia_agendamento }}"
+          turno: "{{ lead.turno_agendamento }}"
+        output_to: available_slots
+        next: d_tem_slot
+
+      d_tem_slot:
+        type: decide
+        name: "Tem horário livre?"
+        branches:
+          - on_field: available_slots.total
+            on_value: 0
+            next: e_ag_parcial
+        else: ft_escolhe_slot
+
+      ft_escolhe_slot:
+        type: freetalk
+        name: "Lead escolhe o horário"
+        goal: |
+          Apresente os horários LIVRES de available_slots (use os labels, ex.
+          "sábado 20/06 às 10h") — no máximo os que vieram na lista, NUNCA
+          invente horário. Se widened=true, avise com naturalidade que ampliou
+          além da preferência. Quando o lead escolher, emita set_slot
+          slot_escolhido com o slot_id EXATO do horário escolhido e o signal
+          escolheu. Lead diz que nenhum serve → signal sem_horario. Lead
+          desiste/enrola → signal desistiu.
+        scope: "Escolher um dos horários oferecidos pra visita com o especialista."
+        tools: [handoff_to_human]
+        signals: [escolheu, sem_horario, desistiu]
+        slots: [slot_escolhido]
+        max_turns: 4
+        exit_on_timeout: e_ag_parcial
+        reasoner_tier: standard
+        next: d_slot
+
+      d_slot:
+        type: decide
+        name: "Escolheu?"
+        branches:
+          - on_signal: escolheu
+            next: tool_book
+          - on_signal: sem_horario
+            next: e_ag_parcial
+          - on_signal: desistiu
+            next: e_ag_parcial
+        else: e_ag_parcial
+
+      tool_book:
+        type: tool
+        name: "Agendar no calendário"
+        kind: python
+        ref: book_appointment
+        args:
+          slot_escolhido: "{{ lead.slot_escolhido }}"
+        output_to: booking_result
+        next: d_book
+
+      d_book:
+        type: decide
+        name: "Booking ok?"
+        branches:
+          - on_field: booking_result.status
+            on_value: booked
+            next: e_agendado
+          - on_field: booking_result.status
+            on_value: pending
+            next: e_ag_pendente
+          - on_field: booking_result.status
+            on_value: slot_taken
+            next: tool_slots
+        else: e_ag_parcial
+
+      e_agendado:
+        type: end
+        name: "Visita agendada"
+        outcome: abandoned
+        role: success
+
+      e_ag_pendente:
+        type: end
+        name: "Booking pendente — confirmação assíncrona"
+        outcome: abandoned
+        role: success
+
+      e_ag_parcial:
+        type: end
+        name: "Agendamento parcial — handoff"
+        outcome: handed_off
+        role: success
+        farewell: "Anotei suas preferências! O especialista vai entrar em contato pra confirmar o melhor horário. 🙂"
+
+  sub_refinar_busca:
+    start: ft_refinar
+    nodes:
+      ft_refinar:
+        type: freetalk
+        name: "Identificar dimensão a refinar"
+        goal: |
+          Lead precisa refinar o perfil de busca (valor / localização /
+          tamanho / tipo do imóvel). Pergunte de forma natural o que ele
+          gostaria de ajustar, OU pegue da própria fala. Mapeie pra UM dos
+          4 sinais. Heurística: lead falando em valor/preço/orçamento/
+          caro/barato → ajustar_valor. Bairro/cidade/região → ajustar_local.
+          Quartos/metragem/tamanho/maior/menor → ajustar_tamanho.
+          Apartamento vs casa vs lançamento → ajustar_tipo. Quando lead
+          pede 'similar' / 'qualquer coisa' / 'me mostra mais' SEM dica
+          específica, default = ajustar_valor (mais comum). NUNCA invente
+          código/valor — apenas roteie o refinamento. Use property_search
+          pra mostrar prévia se ajudar a contextualizar.
+        scope: "Refinar dimensão de busca (valor/local/tamanho/tipo)."
+        tools: [property_search, record_ft_signal, handoff_to_human]
+        signals: [ajustar_valor, ajustar_local, ajustar_tamanho, ajustar_tipo, desistiu]
+        max_turns: 3
+        exit_on_timeout: e_sem_refinamento
+        reasoner_tier: standard
+        next: d_dim
+
+      d_dim:
+        type: decide
+        name: "Qual dimensão?"
+        branches:
+          - on_signal: ajustar_valor
+            next: c_nova_faixa
+          - on_signal: ajustar_local
+            next: c_nova_regiao
+          - on_signal: ajustar_tamanho
+            next: c_novo_tamanho
+          - on_signal: ajustar_tipo
+            next: c_novo_tipo
+          - on_signal: desistiu
+            next: e_sem_refinamento
+        else: e_sem_refinamento
+
+      c_nova_faixa:
+        type: collect
+        name: "Nova faixa de valor"
+        slot: faixa_investimento
+        question: "entendi. olha, qual faixa de investimento ficaria mais confortável pra você?"
+        fta_level: medium
+        next: e_refinado
+
+      c_nova_regiao:
+        type: collect
+        name: "Nova região"
+        slot: regiao
+        question: "tranquilo. então me diz, qual região faria mais sentido? algum bairro específico ou aceita expandir um pouco pra cidade vizinha?"
+        fta_level: low
+        next: e_refinado
+
+      c_novo_tamanho:
+        type: collect
+        name: "Novo tamanho"
+        slot: caracteristicas
+        question: "boa. e qual seria o tamanho ideal — quantos quartos, suíte, metragem mínima? me passa o que for indispensável."
+        fta_level: low
+        next: e_refinado
+
+      c_novo_tipo:
+        type: collect
+        name: "Novo tipo de imóvel"
+        slot: tipo_imovel
+        question: "saquei. então tu pensa mais em apartamento, casa, cobertura, terreno, ou quer olhar lançamento na planta?"
+        fta_level: low
+        next: e_refinado
+
+      e_refinado:
+        type: end
+        name: "Critério refinado"
+        outcome: abandoned
+
+      e_sem_refinamento:
+        type: end
+        name: "Sem refinamento"
+        outcome: handed_off
+        farewell: "Tudo bem! Vou te passar pro nosso especialista que pode ter opções fora do sistema. 👍"

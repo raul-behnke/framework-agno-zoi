@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from zoi_routine.ast import EndNode, RoutineAst, ToolNode
+from zoi_routine.ast import EndNode, FreeTalkNode, RoutineAst, ToolNode
 
 from zoi_agno.brains import composer, critic, extractor, planner, tone
 from zoi_agno.contracts import Command, CommandGenOutput
@@ -89,7 +89,7 @@ class Pipeline:
 
         self.rules = default_rules()
         self.dispatcher = DispatcherV4(rules=self.rules)
-        self.tools = build_registry(tenant.config)
+        self.tools = build_registry(tenant.config, tenant.dir)
 
     # -- contexto que as rules leem -------------------------------------
 
@@ -151,7 +151,8 @@ class Pipeline:
         comandos = _comandos_de(saida_extrator, state)
         aceitos, rejeicoes = await self.dispatcher.dispatch(comandos, state, self._ctx(state))
         handoff = self._aplicar(state, aceitos)
-        resultado = self._avancar_executando_tools(state)
+        self._derivar_sinal_de_escolha(state, aceitos)
+        resultado = await self._avancar_executando_tools(state)
         node = current_node(self.routine, state)
         prompt = composer.montar_entrada(
             user_msg=state.get("_last_user_msg", ""),
@@ -290,7 +291,34 @@ class Pipeline:
         )
         return handoff
 
-    def _avancar_executando_tools(self, state: dict[str, Any], *, max_tools: int = 4):
+    def _derivar_sinal_de_escolha(self, state: dict[str, Any], aceitos: list[Command]) -> None:
+        """Escolha registrada sem sinal vira sinal de escolha.
+
+        Num ``freetalk`` que declara slots, gravar um deles É a escolha. Mas o
+        extrator emite o ``set_slot`` e esquece o ``signal`` com frequência —
+        o par sai junto em umas execuções e separado em outras. Quando isso
+        acontece, o ``decide`` seguinte não tem o que consumir e a conversa
+        volta a perguntar o que o lead acabou de responder.
+
+        Instrução de prompt não resolveu isso de forma estável, nem aqui nem
+        no v4. A derivação é determinística e conservadora: só age quando o
+        turno gravou um slot DO NÓ e não emitiu sinal nenhum. Convenção
+        herdada do v4: o primeiro sinal declarado é o de escolha bem-sucedida.
+        """
+        node = current_node(self.routine, state)
+        if not isinstance(node, FreeTalkNode) or not node.signals or not node.slots:
+            return
+        if any(c.kind == "signal" for c in aceitos):
+            return  # o extrator emitiu; respeitamos a escolha dele
+        if not any(c.kind == "set_slot" and c.payload.slot in node.slots for c in aceitos):
+            return
+        state["last_signal"] = node.signals[0]
+        state["_sinal_derivado"] = node.signals[0]
+        logger.info(
+            "pipeline.sinal_derivado no=%s sinal=%s", state.get("current_node"), node.signals[0]
+        )
+
+    async def _avancar_executando_tools(self, state: dict[str, Any], *, max_tools: int = 4):
         """Avança o cursor, executando as tools que o executor marcar.
 
         O executor para em cada ``tool`` e devolve o nó; quem chama é aqui.
@@ -308,15 +336,15 @@ class Pipeline:
         for _ in range(max_tools):
             if resultado.pending_tool is None:
                 break
-            self._executar_tool(state, resultado.pending_tool)
+            await self._executar_tool(state, resultado.pending_tool)
             resultado = advance(self.routine, state)
         return resultado
 
-    def _executar_tool(self, state: dict[str, Any], node: ToolNode) -> None:
+    async def _executar_tool(self, state: dict[str, Any], node: ToolNode) -> None:
         """Roda a tool e grava o payload no slot de saída, movendo o cursor."""
         args = _render_args(node.args, state)
         try:
-            payload = call(self.tools, node.ref, args)
+            payload = await call(self.tools, node.ref, args)
         except ToolDesconhecida:
             logger.error("pipeline.tool_desconhecida ref=%s", node.ref)
             payload = {"total": 0, "candidates": [], "erro": "tool_indisponivel"}

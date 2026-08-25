@@ -1,0 +1,85 @@
+# Tenant config — imob_sdr. Declara domain tools que serão injetadas
+# no toolset.
+#
+# property_search migrado de bespoke (zoi_agent.tools.property) para o motor
+# genérico `kind: catalog` (zoi_agent.tools.catalog_search) em 2026-06-06,
+# Phase 5 do plano catalog-search-motor. A config abaixo é equivalência
+# byte-for-byte com o handler bespoke (incl. widen) — provada pelo diferencial
+# determinístico em tests/unit/tools/test_catalog_equivalence.py (`_IMOB_CONFIG`).
+# property.py permanece em árvore (escape-hatch / rollback).
+
+tools:
+  property_search:
+    kind: catalog
+    module: zoi_agno.tools.catalog_search
+    name: property_search                     # spec.name referenciado pelo routine (ref: property_search)
+    catalog_key: imoveis                       # key do catalog.yaml
+    id_field: codigo                           # serialização / "nunca invente item"
+    max_results: { default: 3, min: 1, max: 6 }
+    serialize:                                 # ordem de campos do _serialize bespoke (property.py:264-283)
+      - id
+      - codigo
+      - tipo
+      - nome
+      - bairro
+      - cidade
+      - valor_brl
+      - area_m2
+      - quartos
+      - suites
+      - vagas
+      - vista
+      - lazer_condominio
+      - pronto_para_morar
+      - descricao
+      - foto_url
+      - tags
+
+    filters:                                   # DESCARTAM (curto-circuito), nunca pontuam
+      - { field: tipo,      op: eq,  from_input: tipo }
+      - { field: valor_brl, op: lte, from_input: max_valor_brl, coerce: money_brl, hard: true }
+      - { field: quartos,   op: gte, from_input: min_quartos,   coerce: int_count }
+
+    scorers:                                   # SOMAM pontos, ordenam, NÃO descartam
+      - { from_input: finalidade, field: finalidade_alvo, match: in_list, weight: 12 }
+      - {
+          from_input: regiao,
+          field: bairro,
+          fields: [bairro, cidade],
+          tag_fields: [tags],
+          match: region,
+          weight: 1,
+        }
+      - {
+          from_inputs: [caracteristicas, caracteristicas_text],
+          match: tokens_in_blob,
+          blob: [descricao, tags],
+          coerce: token_list,
+          weight: 3,
+        }
+      - {
+          from_input: max_valor_brl,
+          field: valor_brl,
+          match: near,
+          coerce: money_brl,
+          tiers: [[0.85, 6], [1.0, 3]],
+        }
+
+    # widen priority = custo de compromisso (1 = lead cede primeiro). Hard constraints (preço, hard:true) NÃO entram aqui — usam over_budget_fallback.
+    widen:                                     # Search widening (Bloco 4.2) — quando total==0 afrouxa 1 param/vez por priority
+      regiao:                                  # afrouxa gating de score por região
+        { auto: true, op: drop_score_gate, from_input: regiao, priority: 1 }  # from_input só rotula relaxed[*] (= bespoke); não muta args
+      min_quartos:                             # 3 → 2 (soft preference: lead pode ceder no nº de quartos)
+        { auto: true, op: step, step: -1, from_input: min_quartos, coerce: int_count, priority: 3 }
+      # params ausentes de `widen` ou com `auto: false` são SENSÍVEIS → nunca auto-relaxados
+
+    over_budget_fallback: { field: valor_brl, from_input: max_valor_brl, coerce: money_brl, max_k: 3 }
+
+  agenda_corretor:
+    kind: ghl_calendar
+    ghl_location_id: FIXTURE_LOCATION
+    calendar_id: FIXTURE_CALENDAR      # calendar "Visitas" (round-robin, 60min) — sub-account Imobiliária
+    window_days: 7
+    max_slots: 3
+    slot_minutes: 60
+    title_template: "Visita Zoi — {nome}"

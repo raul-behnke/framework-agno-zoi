@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** Fase 4 quase fechada. Pipeline como Workflow do Agno, estado persistido por `session_id`, cinco cérebros ativos e os fragmentos de prompt do v4 portados. Faltam: fixtures de produção e o gate contra os goldens.
+> **Estado:** Fase 4 quase fechada. Pipeline como Workflow do Agno, cinco cérebros, prompts do v4 portados e **dois tenants de produção rodando de ponta a ponta** sobre fixtures offline. Falta o gate contra os goldens.
 
 ## A ideia central
 
@@ -55,7 +55,7 @@ Um step-função que declara `run_context` recebe o `session_state` vivo; a escr
 | `gateway.py` | `routing.yaml` → modelo por papel + cadeia de fallback |
 | `guards/` | Anti-invenção e frases proibidas, determinísticos |
 | `prompts.py` | Hierarquia de instrução, âncora temporal, grounding por papel |
-| `tools/` | Registro resolvido pelo `config.yaml` do tenant |
+| `tools/` | Motor de catálogo declarativo + agenda + registro por `config.yaml` |
 | `builder.py` | `Tenant → agno.Workflow` + `WorkflowRuntime` |
 
 **Regra dura:** nada em `zoi_agno/` conhece o nome de um tenant. Vertical nova é pasta nova em `tenants/`, zero linha de Python.
@@ -221,3 +221,30 @@ Três fragmentos compartilhados (`prompts.py`), portados do v4. Cada um existe p
 - *Disclosure de relaxamento* — quando a busca teve que ceder um critério, o agente diz isso. Oferecer o mais próximo como se fosse o pedido é a forma mais comum de o agente parecer desonesto, e o lead descobre depois.
 
 E uma diretiva de nó: num `freetalk` que declara slots, a resposta do lead é uma **escolha**, então `set_slot` e `signal` têm que sair juntos, com o valor exato do id — não o rótulo legível. Sem isso o slot é gravado, o `decide` seguinte não tem sinal para consumir, e a conversa volta a perguntar o que o lead já respondeu.
+
+## Fixtures: tenants reais, sem rede
+
+`tenants/` traz `sal_imports` e `imob_sdr` — os artefatos de produção, com **duas** diferenças, ambas para rodar offline sem tocar o CRM de um cliente ativo:
+
+1. `source: ghl_products` virou catálogo local (`catalog.yaml` sintético, schema real)
+2. ids de conta substituídos por `FIXTURE_*`
+
+Todo o resto — routine, persona, regras de negócio, filtros, scorers, widen, diversidade, over-budget — é idêntico ao que roda em produção.
+
+O motor de catálogo do v4 foi portado inteiro. Ele não é um `SELECT`:
+
+```
+lead: scooter até 7 mil          →  SC-500 R$4990 500W · SC-800 R$6490 800W · SC-820 R$6750 800W
+lead: 1000W até 5 mil            →  relaxed: potencia 1000→800, categoria ampliada
+lead: "Vento 1000"               →  SC-1000 (fuzzy no nome, qualquer categoria)
+```
+
+Quando a busca cede um critério, o `relaxed` vira **disclosure obrigatória** no prompt do redator. É o oposto de empurrar o mais próximo fingindo que atendeu o pedido.
+
+## Duas derivações determinísticas
+
+Coisas que instrução de prompt não segurou de forma estável, nem aqui nem no v4, e por isso viraram código:
+
+**Manifesto de slots.** O extrator vê *todos* os slots do fluxo, com marca no que está sendo perguntado agora. O lead responde na ordem dele: `"sou o Marcos de Bangu, consigo falar sim"` grava três slots num turno, mesmo que o nó ativo pergunte só um. Sem isso o agente reperguntava o nome nos dois turnos seguintes — contra a instrução explícita da persona.
+
+**Sinal derivado de escolha.** Num `freetalk` com slots declarados, gravar um deles *é* a escolha. O extrator emite o `set_slot` e esquece o `signal` com frequência; quando isso acontece o `decide` seguinte não tem o que consumir. A derivação é conservadora: só age quando o turno gravou um slot **do nó** e não emitiu sinal nenhum. Sinal do extrator sempre vence.

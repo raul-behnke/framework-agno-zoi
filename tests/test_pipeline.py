@@ -253,3 +253,54 @@ async def test_conversa_de_tres_turnos_chega_ao_fim(pipe) -> None:
     r2 = await p.rodar_turno(st, "terça às 11")
     assert r2.finished is True
     assert r2.node_id == "e_agendado"
+
+
+async def test_escolha_sem_sinal_vira_sinal_derivado(pipe) -> None:
+    """O extrator grava o slot e esquece o signal — acontece o tempo todo.
+
+    Sem a derivação, o decide seguinte não tem o que consumir e a conversa
+    volta a perguntar o que o lead acabou de responder. Instrução de prompt
+    não segurou isso de forma estável.
+    """
+    p, st = pipe
+    st["current_node"] = "ft_escolhe"
+    p.extrator = ExtratorFalso([[_slot("horario", "terça às 11:00")]])  # sem signal
+    p.redator = RedatorFalso()
+
+    r = await p.rodar_turno(st, "terça às 11 tá bom")
+
+    assert st["_sinal_derivado"] == "escolheu"
+    assert r.finished is True, "devia ter roteado até o end pelo sinal derivado"
+
+
+async def test_sinal_do_extrator_vence_a_derivacao(pipe) -> None:
+    """Se o extrator falou, respeitamos — inclusive quando ele diz 'desistiu'."""
+    p, st = pipe
+    st["current_node"] = "ft_escolhe"
+    p.extrator = ExtratorFalso(
+        [
+            [
+                _slot("horario", "terça às 11:00"),
+                {"kind": "signal", "payload": {"name": "desistiu", "value": True}},
+            ]
+        ]
+    )
+    p.redator = RedatorFalso()
+
+    r = await p.rodar_turno(st, "na verdade deixa pra lá")
+
+    assert "_sinal_derivado" not in st
+    assert r.node_id == "e_nutricao", "o sinal do extrator é que devia rotear"
+
+
+async def test_sem_slot_do_no_nao_deriva_sinal(pipe) -> None:
+    """Conversa que não é escolha não pode virar escolha por acidente."""
+    p, st = pipe
+    st["current_node"] = "ft_escolhe"
+    p.extrator = ExtratorFalso([[_slot("nome", "Ana")]])  # slot de outra etapa
+    p.redator = RedatorFalso()
+
+    r = await p.rodar_turno(st, "esqueci de dizer, sou a Ana")
+
+    assert "_sinal_derivado" not in st
+    assert r.finished is False
