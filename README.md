@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** o critério de desistência do projeto foi respondido — **`wait` e retomada durável funcionam no Agno sem gambiarra**. Pipeline como Workflow, cinco cérebros, prompts do v4, tenants de produção offline e os 12 goldens do `sal_imports` limpos. Faltam canal e deploy.
+> **Estado:** rodando no Telegram. Pipeline como Workflow do Agno, cinco cérebros, esperas duráveis, tenants de produção offline e 12 goldens limpos. Falta deploy.
 
 ## A ideia central
 
@@ -59,6 +59,7 @@ Um step-função que declara `run_context` recebe o `session_state` vivo; a escr
 | `builder.py` | `Tenant → agno.Workflow` + `WorkflowRuntime` |
 | `eval/` | Replay de goldens — o instrumento do gate |
 | `wait/` | Esperas duráveis: registro, resolução de prazo e worker |
+| `channel/` | Telegram: polling, debounce, bolhas, dedup |
 
 **Regra dura:** nada em `zoi_agno/` conhece o nome de um tenant. Vertical nova é pasta nova em `tenants/`, zero linha de Python.
 
@@ -306,3 +307,24 @@ Duas decisões que valem registrar:
 **Roteiro com `wait` e sem repositório não sobe.** Um `wait` ignorado faria a conversa seguir como se o tempo não existisse. Melhor o tenant falhar na subida que o lead nunca receber o follow-up prometido.
 
 **A espera é concluída antes de o turno rodar.** Se a retomada falhar, a conversa fica parada em vez de ser reacordada a cada varredura — retomada em laço é pior que retomada perdida, porque o lead recebe a mesma mensagem várias vezes.
+
+## Rodando no Telegram
+
+```bash
+cp .env.example .env      # OPENAI_API_KEY + TELEGRAM_BOT_TOKEN
+uv run python app.py sal_imports
+```
+
+Um processo por bot. Vertical nova é pasta nova em `tenants/` — `app.py` não conhece o nome de nenhum tenant.
+
+Long polling, sem webhook. É escolha deliberada: o canal Telegram do v4 tem 3.774 linhas de webhook, assinatura e registro de bots; `getUpdates` num laço resolve para provar o runtime, sem HTTPS nem domínio. Se virar produto, a troca para webhook não toca o pipeline — a fronteira é a mesma (`WorkflowRuntime.turno`).
+
+### O que a borda faz, e o runtime não
+
+**Debounce.** O lead manda "oi", depois "quero cortar o cabelo", depois "hoje dá?". Sem juntar a rajada num turno só, o agente responde três vezes e se atropela — a segunda resposta chega antes de o lead ler a primeira. É o bug mais visível de um agente sem esta camada, e fica no canal porque quem sabe que houve rajada é quem recebe os eventos.
+
+**Bolhas.** Uma ideia por mensagem, com pausa proporcional ao tamanho. Parágrafo é separação intencional do autor; quebra de linha simples com fragmento muito curto ("Show!") gruda na seguinte, senão vira tique.
+
+**Dedup.** O Telegram reentrega um update quando o ack se perde.
+
+**Comandos de canal:** `/start` deixa o agente abrir na voz da persona, `/reset` começa outra conversa, `/estado` mostra nó e slots.

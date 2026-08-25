@@ -2337,6 +2337,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "agno" },
+    { name = "httpx" },
     { name = "litellm" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
@@ -2357,6 +2358,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agno", specifier = ">=3.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "litellm", specifier = ">=1.83" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },

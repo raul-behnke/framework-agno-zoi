@@ -11,6 +11,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pydantic>=2.10,<3.0",
     "pyyaml>=6.0",
+    "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]
