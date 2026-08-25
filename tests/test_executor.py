@@ -10,7 +10,6 @@ import pytest
 from zoi_routine import parse_routine
 
 from zoi_agno.executor import (
-    WaitNotImplementedError,
     advance,
     collect_group_satisfied,
     is_filled,
@@ -261,8 +260,8 @@ def test_tool_e_marcada_pendente_nao_executada(demo) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_wait_falha_alto_ate_a_fase_8() -> None:
-    """Ignorar em silêncio seria pior: a conversa seguiria sem o tempo passar."""
+def test_wait_estaciona_a_conversa() -> None:
+    """Não avança nem levanta: registra que a conversa está esperando."""
     routine = parse_routine(
         "routine_name: t_wait\nversion: 1\nslots:\n  campo: { type: string }\n"
         "main:\n  start: w_um\n  nodes:\n"
@@ -271,8 +270,12 @@ def test_wait_falha_alto_ate_a_fase_8() -> None:
         '    e_fim:\n      type: end\n      farewell: "fim"\n'
     )
     st = new_session_state(thread_id="x", tenant_id="t", contact_id="1", start_node="w_um")
-    with pytest.raises(WaitNotImplementedError):
-        advance(routine, st)
+    r = advance(routine, st)
+    assert r.waiting is not None, "o executor precisa sinalizar a espera"
+    assert r.waiting.mode == "user"
+    assert st["_waiting"] is True
+    assert r.finished is False
+    assert st["current_node"] == "w_um", "o cursor não se move ao estacionar"
 
 
 def test_ciclo_intra_turno_devolve_a_palavra_ao_lead() -> None:

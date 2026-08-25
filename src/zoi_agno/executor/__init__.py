@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zoi_agno.executor.advance import (
     AdvanceResult,
-    WaitNotImplementedError,
+    WaitSemRepo,
     advance,
     collect_group_satisfied,
     current_block,
@@ -18,7 +18,7 @@ from zoi_agno.executor.values import MISSING, is_filled, normalize_value, resolv
 __all__ = [
     "MISSING",
     "AdvanceResult",
-    "WaitNotImplementedError",
+    "WaitSemRepo",
     "advance",
     "collect_group_satisfied",
     "current_block",

@@ -4,7 +4,7 @@ Runtime de agentes conversacionais da ZOI sobre [Agno](https://docs.agno.com/).
 
 Reimplementação do modelo de composição do runtime v4 (`zoi-agent`) — roteiro YAML, comandos tipados, fiscalização, executor determinístico e grounding — trocando a orquestração LangGraph pelo Workflow do Agno.
 
-> **Estado:** Fase 4 fechada. Pipeline como Workflow do Agno, cinco cérebros, prompts do v4 portados, tenants de produção offline e **os 12 goldens do sal_imports rodando contra o runtime novo**.
+> **Estado:** o critério de desistência do projeto foi respondido — **`wait` e retomada durável funcionam no Agno sem gambiarra**. Pipeline como Workflow, cinco cérebros, prompts do v4, tenants de produção offline e os 12 goldens do `sal_imports` limpos. Faltam canal e deploy.
 
 ## A ideia central
 
@@ -58,6 +58,7 @@ Um step-função que declara `run_context` recebe o `session_state` vivo; a escr
 | `tools/` | Motor de catálogo declarativo + agenda + registro por `config.yaml` |
 | `builder.py` | `Tenant → agno.Workflow` + `WorkflowRuntime` |
 | `eval/` | Replay de goldens — o instrumento do gate |
+| `wait/` | Esperas duráveis: registro, resolução de prazo e worker |
 
 **Regra dura:** nada em `zoi_agno/` conhece o nome de um tenant. Vertical nova é pasta nova em `tenants/`, zero linha de Python.
 
@@ -274,3 +275,34 @@ As três suítes adversariais completas — `red_team` (parcela, CNH, autonomia 
 O `2/12` não é falha: os goldens têm listas de falas de tamanho fixo, e a maioria acaba antes de a conversa fechar. As suítes adversariais são sondas de 3 a 4 turnos que nunca deveriam terminar num `end`.
 
 **O que este gate ainda não faz:** medir aderência de processo. Os goldens não declaram o desfecho esperado, e o v4 pontua isso com um juiz LLM que ainda não foi portado. Comparar os dois runtimes lado a lado exige, além disso, subir o ambiente do v4 — Postgres, LangGraph e o resto.
+
+## Esperas duráveis
+
+Era esta a pergunta que decidia o projeto: um nó `wait` para a conversa por 24 horas — dá para acordá-la sem o lead falar, e sem gambiarra?
+
+Dá, e com uma peça a menos que o v4.
+
+```
+turno normal   →  executor pousa num `wait`  →  estaciona
+                                                 estado persiste no db
+                                                 uma linha no registro de esperas
+                                                 nenhum processo ocupado
+
+           ...
+
+worker (outro processo, mesmo banco)
+   →  acha as vencidas
+   →  update_session_state(current_node=destino, _waiting=False)
+   →  roda o Workflow com mensagem vazia
+   →  turno normal, do destino declarado
+```
+
+Não há API de retomada nem checkpoint a reidratar: é o mesmo `session_state` do turno comum. Um processo externo abre o banco, corrige o estado e invoca. O v4 precisa de `aupdate_state` + `ainvoke` sobre o checkpointer do LangGraph para o mesmo efeito.
+
+Três modos, do schema do routine: `user` (prazo, para follow-up), `time` (instante calculado do estado) e `signal` (evento externo, sem prazo). Um `boundary` de timer é um segundo prazo com destino próprio — quem vencer primeiro manda.
+
+Duas decisões que valem registrar:
+
+**Roteiro com `wait` e sem repositório não sobe.** Um `wait` ignorado faria a conversa seguir como se o tempo não existisse. Melhor o tenant falhar na subida que o lead nunca receber o follow-up prometido.
+
+**A espera é concluída antes de o turno rodar.** Se a retomada falhar, a conversa fica parada em vez de ser reacordada a cada varredura — retomada em laço é pior que retomada perdida, porque o lead recebe a mesma mensagem várias vezes.

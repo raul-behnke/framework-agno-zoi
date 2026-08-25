@@ -51,11 +51,11 @@ from zoi_agno.executor.values import is_filled, normalize_value, resolve_path
 logger = logging.getLogger(__name__)
 
 
-class WaitNotImplementedError(NotImplementedError):
-    """``wait`` exige retomada durável — Fase 8.
+class WaitSemRepo(RuntimeError):
+    """A conversa parou num ``wait`` e não há onde registrar a espera.
 
-    Falha alto em vez de degradar: um ``wait`` silenciosamente ignorado faria
-    a conversa seguir como se o tempo não existisse, que é pior que parar.
+    Falha alto em vez de degradar: um ``wait`` ignorado faria a conversa
+    seguir como se o tempo não existisse, o que é pior que parar.
     """
 
 
@@ -80,6 +80,9 @@ class AdvanceResult:
 
     entered_subflow: str | None = None
     """Ref da sub-rotina em que acabou de entrar."""
+
+    waiting: WaitNode | None = None
+    """Nó ``wait`` em que a conversa estacionou. O pipeline registra a espera."""
 
     reason: str = ""
     """Por que parou aqui — vai para o log e para o depurador."""
@@ -237,9 +240,15 @@ def advance(routine: RoutineAst, state: dict[str, Any], *, max_hops: int = 32) -
                 templates.append(node.farewell)
             break
 
-        # --- wait: Fase 8 ---
+        # --- wait: estaciona a conversa ---
         if isinstance(node, WaitNode):
-            raise WaitNotImplementedError(f"nó wait {node_id!r}: retomada durável chega na Fase 8")
+            # Chegar aqui significa entrada NOVA no nó: quando o worker acorda
+            # a conversa, ele já moveu o cursor para o destino antes de
+            # reinvocar, então o cursor nunca volta a apontar para o wait.
+            resultado.waiting = node
+            state["_waiting"] = True
+            resultado.reason = f"estacionado em {node_id!r} (modo {node.mode})"
+            break
 
         # --- collect / collect_group: fica se ainda falta ---
         if isinstance(node, CollectGroupNode):

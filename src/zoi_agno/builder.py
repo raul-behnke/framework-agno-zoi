@@ -43,16 +43,27 @@ _MEIO = "_meio_do_turno"
 _TURNO = "_turno_resultado"
 
 
-def build_workflow(tenant: Tenant, *, db: Any, pipeline: Pipeline | None = None) -> Workflow:
+def build_workflow(
+    tenant: Tenant,
+    *,
+    db: Any,
+    pipeline: Pipeline | None = None,
+    repo_de_esperas: Any = None,
+) -> Workflow:
     """Monta o Workflow de um tenant.
 
     ``pipeline`` pode ser injetado nos testes para trocar os cérebros por
     dublês sem tocar na topologia.
     """
-    p = pipeline or Pipeline(tenant, db=db)
+    p = pipeline or Pipeline(tenant, db=db, repo_de_esperas=repo_de_esperas)
 
     async def ingress(step_input: StepInput, run_context) -> StepOutput:
         estado = run_context.session_state
+        # O session_id do Agno É a thread da conversa. Sem carimbá-lo aqui, o
+        # estado não sabe quem é: uma espera registrada por um nó `wait`
+        # apontaria para uma sessão vazia e o worker nunca a encontraria.
+        if sid := getattr(run_context, "session_id", None):
+            estado["thread_id"] = sid
         _garantir_estado(estado, tenant)
         user_msg = str(step_input.input or "")
         prompt = p.ingress(estado, user_msg)
@@ -113,9 +124,10 @@ def _garantir_estado(estado: dict[str, Any], tenant: Tenant) -> None:
     sabe no primeiro turno daquela conversa.
     """
     if not estado.get("current_node"):
+        thread_id = estado.get("thread_id", "")
         estado.update(
             new_session_state(
-                thread_id=estado.get("thread_id", ""),
+                thread_id=thread_id,
                 tenant_id=tenant.tenant_id,
                 contact_id=estado.get("contact_id", ""),
                 start_node=tenant.start_node,
@@ -132,10 +144,19 @@ class WorkflowRuntime:
     o Agno.
     """
 
-    def __init__(self, tenant: Tenant, *, db: Any, pipeline: Pipeline | None = None) -> None:
+    def __init__(
+        self,
+        tenant: Tenant,
+        *,
+        db: Any,
+        pipeline: Pipeline | None = None,
+        repo_de_esperas: Any = None,
+    ) -> None:
         self.tenant = tenant
         self.db = db
-        self.workflow = build_workflow(tenant, db=db, pipeline=pipeline)
+        self.workflow = build_workflow(
+            tenant, db=db, pipeline=pipeline, repo_de_esperas=repo_de_esperas
+        )
 
     async def turno(self, session_id: str, user_msg: str) -> Turno:
         """Um turno. O estado vem do ``db`` e volta para ele."""

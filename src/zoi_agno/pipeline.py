@@ -25,10 +25,12 @@ from zoi_agno.contracts import Command, CommandGenOutput
 from zoi_agno.enforcement import default_rules
 from zoi_agno.enforcement.dispatcher_v4 import DispatcherV4
 from zoi_agno.executor import advance, current_node, end_de_handoff
+from zoi_agno.executor.advance import WaitSemRepo
 from zoi_agno.guards import checar_frases_proibidas, checar_grounding
 from zoi_agno.state import reset_turn
 from zoi_agno.tenants import Tenant
 from zoi_agno.tools import ToolDesconhecida, build_registry, call
+from zoi_agno.wait.resolver import resolver as resolver_espera
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,7 @@ class Pipeline:
         tenant: Tenant,
         *,
         db: Any = None,
+        repo_de_esperas: Any = None,
         usar_planner: bool = True,
         config_tom: tone.ConfigTom | None = None,
         cerebros: dict[str, Any] | None = None,
@@ -73,6 +76,7 @@ class Pipeline:
         self.tenant = tenant
         self.routine: RoutineAst = tenant.routine
         self.db = db
+        self.repo_de_esperas = repo_de_esperas
 
         # Os cinco cérebros. Extrator e redator rodam sempre; os outros três
         # têm portão próprio, porque cada um custa uma chamada por turno.
@@ -155,6 +159,7 @@ class Pipeline:
         if handoff:
             self._rotear_para_escalada(state)
         resultado = await self._avancar_executando_tools(state)
+        self._registrar_espera(state, resultado)
         node = current_node(self.routine, state)
         prompt = composer.montar_entrada(
             user_msg=state.get("_last_user_msg", ""),
@@ -292,6 +297,37 @@ class Pipeline:
             0 if houve_set else int(state.get("_turns_since_set_slot", 0)) + 1
         )
         return handoff
+
+    def _registrar_espera(self, state: dict[str, Any], resultado: Any) -> None:
+        """Conversa que estacionou vira uma linha no registro de esperas.
+
+        Sem repositório, falha alto: um ``wait`` ignorado faria a conversa
+        seguir como se o tempo não existisse. É melhor o tenant não subir do
+        que o lead nunca receber o follow-up prometido.
+        """
+        node = resultado.waiting
+        if node is None:
+            return
+        if self.repo_de_esperas is None:
+            raise WaitSemRepo(
+                f"o roteiro de {self.tenant.tenant_id!r} tem nó wait, mas o "
+                "Pipeline foi construído sem repo_de_esperas"
+            )
+        espera = resolver_espera(node, state.get("current_node", ""), state)
+        self.repo_de_esperas.estacionar(
+            tenant_id=self.tenant.tenant_id,
+            session_id=state.get("thread_id", ""),
+            node_id=espera.node_id,
+            retomar_em=espera.retomar_em,
+            vence_em=espera.vence_em,
+            topico=espera.topico,
+        )
+        logger.info(
+            "pipeline.estacionou no=%s vence=%s topico=%s",
+            espera.node_id,
+            espera.vence_em,
+            espera.topico,
+        )
 
     def _rotear_para_escalada(self, state: dict[str, Any]) -> None:
         """Escalada aceita move o cursor para o End de handoff.
